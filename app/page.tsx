@@ -11,6 +11,8 @@ import { useTheme } from "next-themes"
 import { Toaster } from "@/components/ui/toaster"
 import { useToast } from "@/hooks/use-toast"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
+import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/components/ui/accordion"
 
 interface ChatMessage {
   role: "system" | "user" | "assistant"
@@ -139,6 +141,47 @@ const Block: React.FC<BlockProps> = React.memo(function Block({ block, blockInde
     </div>
   )
 })
+
+// JsonlPreview komponenti
+function JsonlPreview({ tab }: { tab: FileTab }) {
+  if (!tab) return null;
+  return (
+    <Accordion type="single" collapsible defaultValue="">
+      <AccordionItem value="preview">
+        <AccordionTrigger>
+          <CardHeader className="p-0">
+            <CardTitle>Preview</CardTitle>
+          </CardHeader>
+        </AccordionTrigger>
+        <AccordionContent>
+          <Card className="mb-6 border-none shadow-none bg-transparent">
+            <CardContent className="p-0">
+              <div className="space-y-4">
+                {tab.blocks.length === 0 ? (
+                  <div className="text-muted-foreground text-center">No blocks to preview</div>
+                ) : (
+                  tab.blocks.map((block, blockIdx) => (
+                    <div key={block.id} className="border rounded p-3 bg-muted/30">
+                      <div className="font-semibold text-xs mb-2 text-muted-foreground">Block {blockIdx + 1}</div>
+                      <div className="space-y-2">
+                        {block.messages.map((msg, msgIdx) => (
+                          <div key={msgIdx} className="flex items-start gap-2">
+                            <span className={`px-2 py-0.5 rounded text-xs font-mono ${msg.role === 'system' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-200' : msg.role === 'user' ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-200' : 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-200'}`}>{msg.role}</span>
+                            <span className="text-sm whitespace-pre-line font-mono">{msg.content || <span className="italic text-muted-foreground">(empty)</span>}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </AccordionContent>
+      </AccordionItem>
+    </Accordion>
+  );
+}
 
 export default function JSONLChatEditor() {
   const [fileTabs, setFileTabs] = useState<FileTab[]>([])
@@ -795,108 +838,112 @@ export default function JSONLChatEditor() {
           {/* Tab Contents */}
           {fileTabs.map((tab) => (
             <TabsContent key={tab.id} value={tab.id} className="mt-0">
-              {/* File information */}
-              <div className="mb-4 p-4 bg-white dark:bg-gray-800 rounded-lg shadow-sm border">
-                <h3 className="font-semibold mb-2">File information:</h3>
-                <div className="flex items-center gap-2 mb-1">
-                  <Folder className="w-4 h-4 text-muted-foreground" />
-                  <span className="text-sm text-muted-foreground">File name:</span>
-                  {editingTabId === tab.id ? (
-                    <>
-                      <input
-                        className="border rounded px-2 py-1 text-sm w-36 focus:outline-none focus:ring-2 focus:ring-green-500 bg-transparent dark:bg-gray-900"
-                        value={editingName}
-                        autoFocus
-                        onChange={e => setEditingName(e.target.value.replace(/[^a-zA-Z0-9_-]/g, ''))}
-                        onBlur={() => saveTabName(tab.id)}
-                        onKeyDown={e => {
-                          if (e.key === "Enter") saveTabName(tab.id)
-                          if (e.key === "Escape") setEditingTabId(null)
-                        }}
-                        maxLength={48}
-                      />
-                      <span className="ml-1 text-muted-foreground text-sm select-none">.jsonl</span>
-                      <button className="ml-1 text-green-600 hover:text-green-800" onClick={() => saveTabName(tab.id)}>
-                        <Check className="w-4 h-4" />
-                      </button>
-                      <button className="ml-1 text-gray-400 hover:text-red-500" onClick={() => setEditingTabId(null)}>
-                        <X className="w-4 h-4" />
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <span className="truncate max-w-xs inline-block align-middle">{tab.name}</span>
+              <div className="flex flex-col gap-4 w-full"> {/* Block container boshlandi */}
+                {/* File information */}
+                <div className="mb-4 p-4 bg-white dark:bg-gray-800 rounded-lg shadow-sm border">
+                  <h3 className="font-semibold mb-2">File information:</h3>
+                  <div className="flex items-center gap-2 mb-1">
+                    <Folder className="w-4 h-4 text-muted-foreground" />
+                    <span className="text-sm text-muted-foreground">File name:</span>
+                    {editingTabId === tab.id ? (
+                      <>
+                        <input
+                          className="border rounded px-2 py-1 text-sm w-36 focus:outline-none focus:ring-2 focus:ring-green-500 bg-transparent dark:bg-gray-900"
+                          value={editingName}
+                          autoFocus
+                          onChange={e => setEditingName(e.target.value.replace(/[^a-zA-Z0-9_-]/g, ''))}
+                          onBlur={() => saveTabName(tab.id)}
+                          onKeyDown={e => {
+                            if (e.key === "Enter") saveTabName(tab.id)
+                            if (e.key === "Escape") setEditingTabId(null)
+                          }}
+                          maxLength={48}
+                        />
+                        <span className="ml-1 text-muted-foreground text-sm select-none">.jsonl</span>
+                        <button className="ml-1 text-green-600 hover:text-green-800" onClick={() => saveTabName(tab.id)}>
+                          <Check className="w-4 h-4" />
+                        </button>
+                        <button className="ml-1 text-gray-400 hover:text-red-500" onClick={() => setEditingTabId(null)}>
+                          <X className="w-4 h-4" />
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <span className="truncate max-w-xs inline-block align-middle">{tab.name}</span>
+                        <button
+                          className="ml-1 text-gray-400 hover:text-green-600"
+                          title="Edit file name"
+                          onClick={() => {
+                            setEditingTabId(tab.id)
+                            // Faqat asosiy nomni inputga joylash
+                            setEditingName(tab.name.replace(/\.jsonl$/, ""))
+                          }}
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                      </>
+                    )}
+                  </div>
+                  <div className="text-sm text-muted-foreground flex items-center gap-2 mb-1">
+                    <LayoutGrid className="w-4 h-4 mr-1" /> Total blocks: {tab.blocks.length}
+                  </div>
+                  <div className="text-sm text-muted-foreground flex items-center gap-2 mb-1">
+                    <MessageSquare className="w-4 h-4 mr-1" /> Total messages: {tab.blocks.reduce((total, block) => total + block.messages.length, 0)}
+                  </div>
+                  {tab.hasUnsavedChanges && (
+                    <div className="text-sm text-orange-500 flex items-center gap-2 mt-1">
+                      <AlertTriangle className="w-4 h-4" />
+                      <span>Unsaved changes</span>
                       <button
-                        className="ml-1 text-gray-400 hover:text-green-600"
-                        title="Edit file name"
+                        className="ml-2 px-3 py-1 bg-green-600 hover:bg-green-700 text-white rounded flex items-center gap-1 text-xs font-semibold shadow"
                         onClick={() => {
-                          setEditingTabId(tab.id)
-                          // Faqat asosiy nomni inputga joylash
-                          setEditingName(tab.name.replace(/\.jsonl$/, ""))
+                          downloadFile("jsonl", tab)
+                          setFileTabs((prev) => prev.map(t => t.id === tab.id ? { ...t, hasUnsavedChanges: false } : t))
                         }}
+                        title="Save changes"
                       >
-                        <Pencil className="w-4 h-4" />
+                        <Download className="w-4 h-4" /> Save
                       </button>
-                    </>
+                    </div>
                   )}
                 </div>
-                <div className="text-sm text-muted-foreground flex items-center gap-2 mb-1">
-                  <LayoutGrid className="w-4 h-4 mr-1" /> Total blocks: {tab.blocks.length}
-                </div>
-                <div className="text-sm text-muted-foreground flex items-center gap-2 mb-1">
-                  <MessageSquare className="w-4 h-4 mr-1" /> Total messages: {tab.blocks.reduce((total, block) => total + block.messages.length, 0)}
-                </div>
-                {tab.hasUnsavedChanges && (
-                  <div className="text-sm text-orange-500 flex items-center gap-2 mt-1">
-                    <AlertTriangle className="w-4 h-4" />
-                    <span>Unsaved changes</span>
-                    <button
-                      className="ml-2 px-3 py-1 bg-green-600 hover:bg-green-700 text-white rounded flex items-center gap-1 text-xs font-semibold shadow"
-                      onClick={() => {
-                        downloadFile("jsonl", tab)
-                        setFileTabs((prev) => prev.map(t => t.id === tab.id ? { ...t, hasUnsavedChanges: false } : t))
-                      }}
-                      title="Save changes"
-                    >
-                      <Download className="w-4 h-4" /> Save
-                    </button>
+                {/* Preview bo'limi */}
+                <JsonlPreview tab={tab} />
+
+                {/* Chat Blocks */}
+                <div className="space-y-6">
+                  {tab.blocks.map((block, blockIndex) => (
+                    <Block
+                      key={block.id}
+                      block={block}
+                      blockIndex={blockIndex}
+                      copiedText={copiedText}
+                      updateMessageRole={updateMessageRole}
+                      updateMessageContent={updateMessageContent}
+                      copyToClipboard={copyToClipboard}
+                      deleteMessage={deleteMessage}
+                      addMessage={addMessage}
+                      deleteBlock={deleteBlock}
+                    />
+                  ))}
+
+                  {/* Add New Block Button */}
+                  <div className="text-center">
+                    <Button onClick={addNewBlock} className="bg-green-600 hover:bg-green-700 text-white">
+                      <Plus className="w-4 h-4 mr-2" />
+                      Add message block
+                    </Button>
                   </div>
-                )}
-              </div>
 
-              {/* Chat Blocks */}
-              <div className="space-y-6">
-                {tab.blocks.map((block, blockIndex) => (
-                  <Block
-                    key={block.id}
-                    block={block}
-                    blockIndex={blockIndex}
-                    copiedText={copiedText}
-                    updateMessageRole={updateMessageRole}
-                    updateMessageContent={updateMessageContent}
-                    copyToClipboard={copyToClipboard}
-                    deleteMessage={deleteMessage}
-                    addMessage={addMessage}
-                    deleteBlock={deleteBlock}
-                  />
-                ))}
-
-                {/* Add New Block Button */}
-                <div className="text-center">
-                  <Button onClick={addNewBlock} className="bg-green-600 hover:bg-green-700 text-white">
-                    <Plus className="w-4 h-4 mr-2" />
-                    Add message block
-                  </Button>
+                  {tab.blocks.length === 0 && (
+                    <div className="text-center py-12 text-muted-foreground">
+                      <MessageSquare className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                      <p className="text-lg mb-2">No blocks yet</p>
+                      <p className="text-sm">Click the button above to add a new block</p>
+                    </div>
+                  )}
                 </div>
-
-                {tab.blocks.length === 0 && (
-                  <div className="text-center py-12 text-muted-foreground">
-                    <MessageSquare className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                    <p className="text-lg mb-2">No blocks yet</p>
-                    <p className="text-sm">Click the button above to add a new block</p>
-                  </div>
-                )}
-              </div>
+              </div> {/* Block container tugadi */}
             </TabsContent>
           ))}
         </Tabs>
