@@ -252,12 +252,11 @@ export default function JSONLChatEditor() {
   const [isUploading, setIsUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
 
-  const [customCode, setCustomCode] = useState<string>(`// Example: Make all block messages and roles UPPERCASE
+  const [customCode, setCustomCode] = useState<string>(`// Example: Make all block messages UPPERCASE
 return blocks.map(block => ({
   ...block,
   messages: block.messages.map(msg => ({
     ...msg,
-    role: msg.role.toUpperCase(),
     content: msg.content.toUpperCase()
   }))
 }));`);
