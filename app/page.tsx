@@ -13,6 +13,8 @@ import { useToast } from "@/hooks/use-toast"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/components/ui/accordion"
+import dynamic from "next/dynamic"
+const MonacoEditor = dynamic(() => import("@monaco-editor/react"), { ssr: false });
 
 interface ChatMessage {
   role: "system" | "user" | "assistant"
@@ -249,6 +251,18 @@ export default function JSONLChatEditor() {
   const [mounted, setMounted] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
+
+  const [customCode, setCustomCode] = useState<string>(`// Example: Make all block messages and roles UPPERCASE
+return blocks.map(block => ({
+  ...block,
+  messages: block.messages.map(msg => ({
+    ...msg,
+    role: msg.role.toUpperCase(),
+    content: msg.content.toUpperCase()
+  }))
+}));`);
+  const [customCodeError, setCustomCodeError] = useState<string | null>(null);
+  const [isRunningCustomCode, setIsRunningCustomCode] = useState(false);
 
   useEffect(() => {
     setMounted(true)
@@ -789,6 +803,29 @@ export default function JSONLChatEditor() {
     }));
   }, [updateActiveTab]);
 
+  // Custom code runner
+  const runCustomCode = useCallback(() => {
+    setCustomCodeError(null);
+    setIsRunningCustomCode(true);
+    try {
+      // Only allow access to blocks (deep copy for safety)
+      const blocksCopy = JSON.parse(JSON.stringify(activeTab?.blocks || []));
+      // eslint-disable-next-line no-new-func
+      const fn = new Function('blocks', customCode);
+      const result = fn(blocksCopy);
+      if (Array.isArray(result)) {
+        updateActiveTab(tab => ({ ...tab, blocks: result, hasUnsavedChanges: true }));
+        toast({ title: "Success", description: "Custom code applied to blocks." });
+      } else {
+        setCustomCodeError("Your code must return an array of blocks.");
+      }
+    } catch (e: any) {
+      setCustomCodeError(e.message || String(e));
+    } finally {
+      setIsRunningCustomCode(false);
+    }
+  }, [customCode, activeTab, updateActiveTab, toast]);
+
   if (!mounted) {
     return null
   }
@@ -890,6 +927,51 @@ export default function JSONLChatEditor() {
       </header>
 
       <main className="container mx-auto px-4 py-6">
+        {/* --- Run Custom Code Panel --- */}
+        <div className="mb-8">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border p-4">
+            <h2 className="text-lg font-semibold mb-2">Run Custom Code</h2>
+            <p className="text-xs text-muted-foreground mb-2">You can use the <code>blocks</code> variable to manipulate all blocks. Your code must return a new array of blocks.</p>
+            <div className="mb-2">
+              <MonacoEditor
+                height="240px"
+                defaultLanguage="javascript"
+                theme="vs-dark"
+                value={customCode}
+                onChange={(v: string | undefined) => setCustomCode(v || "")}
+                options={{
+                  minimap: { enabled: false },
+                  fontSize: 14,
+                  fontFamily: 'Fira Mono, monospace',
+                  wordWrap: 'on',
+                  scrollBeyondLastLine: false,
+                  lineNumbers: "on",
+                }}
+              />
+            </div>
+            {/* Custom code usage guide */}
+            <div className="mb-4 p-3 rounded bg-muted/40 text-xs text-muted-foreground">
+              <b>How to use:</b>
+              <ul className="list-disc ml-5 mt-1 space-y-1">
+                <li><b>blocks</b> is an array of all blocks. Each block has <b>id</b> and <b>messages</b> (array).</li>
+                <li>Each <b>message</b> has <b>role</b> (system/user/assistant) and <b>content</b> (string).</li>
+                <li>Your code <b>must return a new array of blocks</b> (use <code>return ...</code>).</li>
+                <li>You can use <code>map</code>, <code>filter</code>, <code>forEach</code> and all JS array methods.</li>
+                <li><b>Do not use</b> async code, network requests, or browser APIs (window, document, etc).</li>
+                <li>Example: <code>return blocks.map(block =&gt; ...)</code></li>
+                <li>Invalid code or non-array return will show an error.</li>
+              </ul>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button onClick={runCustomCode} disabled={isRunningCustomCode} className="bg-blue-600 hover:bg-blue-700 text-white">
+                {isRunningCustomCode ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                Run
+              </Button>
+              {customCodeError && <span className="text-red-500 text-xs ml-2">{customCodeError}</span>}
+            </div>
+          </div>
+        </div>
+        {/* --- End Custom Code Panel --- */}
         <Tabs value={activeTabId} onValueChange={setActiveTabId} className="w-full">
           {/* Tab Headers */}
           <TabsList className="flex w-full gap-2 bg-transparent mb-6 justify-start">
