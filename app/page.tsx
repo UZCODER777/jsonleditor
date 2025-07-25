@@ -142,118 +142,111 @@ export default function JSONLChatEditor() {
           return
         }
 
-        let parsedMessages: any[] = []
-
-        // 1. Avval messages array formatini tekshiramiz
+        // Avval butun JSON obyekt sifatida parse qilishga harakat qilamiz
         try {
           const jsonData = JSON.parse(trimmedContent)
+          console.log("Successfully parsed as JSON object:", jsonData)
 
-          if (jsonData && Array.isArray(jsonData.messages)) {
-            console.log("Messages array format detected")
-            parsedMessages = jsonData.messages
-          } else if (jsonData && jsonData.role && jsonData.content) {
-            console.log("Single message format detected")
-            parsedMessages = [jsonData]
-          } else {
-            throw new Error("Not a valid chat format")
-          }
-        } catch (singleJsonError) {
-          console.log("Not single JSON, trying JSONL format")
+          // "messages" massivi mavjud bo'lsa
+          if (jsonData && typeof jsonData === "object" && Array.isArray(jsonData.messages)) {
+            console.log("Messages array format detected with", jsonData.messages.length, "messages")
 
-          // 2. JSONL format (har qatorda alohida JSON)
-          const lines = trimmedContent.split("\n")
-
-          for (let i = 0; i < lines.length; i++) {
-            const line = lines[i].trim()
-            if (line === "") continue
-
-            try {
-              const parsed = JSON.parse(line)
-              if (parsed && typeof parsed === "object") {
-                parsedMessages.push(parsed)
-              }
-            } catch (lineError) {
-              console.log(`Line ${i + 1} parsing error:`, lineError)
-              // Xato bo'lgan qatorni ham qo'shamiz, keyinroq ko'rsatish uchun
-              parsedMessages.push({
-                role: "user",
-                content: line,
-                _error: `Line ${i + 1}: Invalid JSON`,
-              })
+            // Barcha xabarlarni bitta blokka joylaymiz
+            const newBlock: ChatBlock = {
+              id: generateId(),
+              messages: jsonData.messages.map((msg: any) => ({
+                role: msg.role || "user",
+                content: typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content),
+              })),
             }
+
+            setBlocks([newBlock])
+            setHasUnsavedChanges(false)
+
+            toast({
+              title: "Muvaffaqiyatli yuklandi",
+              description: `${jsonData.messages.length} ta xabar yuklandi`,
+            })
+            return
+          }
+        } catch (jsonError) {
+          console.log("Not a valid JSON object, trying JSONL format:", jsonError)
+        }
+
+        // JSONL format (har qatorda alohida JSON)
+        const lines = trimmedContent.split("\n")
+        const parsedMessages: ChatMessage[] = []
+
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i].trim()
+          if (line === "") continue
+
+          try {
+            const parsed = JSON.parse(line)
+            if (parsed && typeof parsed === "object") {
+              if (parsed.role && parsed.content) {
+                parsedMessages.push({
+                  role: parsed.role as "system" | "user" | "assistant",
+                  content: typeof parsed.content === "string" ? parsed.content : JSON.stringify(parsed.content),
+                })
+              } else if (parsed.messages && Array.isArray(parsed.messages)) {
+                // Agar bu messages massivi bo'lsa
+                parsed.messages.forEach((msg: any) => {
+                  if (msg.role && msg.content) {
+                    parsedMessages.push({
+                      role: msg.role as "system" | "user" | "assistant",
+                      content: typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content),
+                    })
+                  }
+                })
+              } else {
+                console.log(`Line ${i + 1} has invalid format:`, parsed)
+                parsedMessages.push({
+                  role: "user",
+                  content: JSON.stringify(parsed),
+                })
+              }
+            }
+          } catch (lineError) {
+            console.log(`Line ${i + 1} parsing error:`, lineError)
+            parsedMessages.push({
+              role: "user",
+              content: line,
+            })
           }
         }
 
         console.log("Parsed messages:", parsedMessages)
 
         if (parsedMessages.length === 0) {
+          // Agar hech qanday xabar topilmasa, butun matnni bitta xabar sifatida ko'rsatamiz
+          setBlocks([
+            {
+              id: generateId(),
+              messages: [{ role: "user", content: trimmedContent }],
+            },
+          ])
+
           toast({
-            title: "Xabarlar topilmadi",
-            description: "Faylda hech qanday to'g'ri xabar topilmadi",
+            title: "Format tanilmadi",
+            description: "Fayl JSON yoki JSONL formatida emas, lekin matn ko'rsatilmoqda",
             variant: "destructive",
           })
           return
         }
 
-        // 3. Xabarlarni bloklarga ajratamiz
-        const newBlocks: ChatBlock[] = []
-        let currentBlockMessages: any[] = []
-
-        parsedMessages.forEach((msg, index) => {
-          // Xabar formatini tekshirish
-          if (!msg.role || !msg.content) {
-            console.log(`Invalid message at index ${index}:`, msg)
-            // Noto'g'ri formatdagi xabarni ham qo'shamiz
-            currentBlockMessages.push({
-              role: "user",
-              content: JSON.stringify(msg),
-              _error: "Invalid message format: missing role or content",
-            })
-          } else if (!["system", "user", "assistant"].includes(msg.role)) {
-            console.log(`Invalid role at index ${index}:`, msg.role)
-            currentBlockMessages.push({
-              role: "user",
-              content: msg.content,
-              _error: `Invalid role: ${msg.role}`,
-            })
-          } else {
-            // To'g'ri xabar
-            currentBlockMessages.push({
-              role: msg.role,
-              content: String(msg.content),
-            })
-          }
-
-          // Har 3 ta xabardan keyin yangi blok yaratamiz yoki oxirgi xabar bo'lsa
-          if (currentBlockMessages.length >= 3 || index === parsedMessages.length - 1) {
-            newBlocks.push({
-              id: generateId(),
-              messages: [...currentBlockMessages],
-            })
-            currentBlockMessages = []
-          }
-        })
-
-        console.log("Created blocks:", newBlocks)
-
-        if (newBlocks.length === 0) {
-          // Agar hech qanday blok yaratilmagan bo'lsa, bo'sh blok qo'shamiz
-          newBlocks.push({
+        // Barcha xabarlarni bitta blokka joylaymiz
+        setBlocks([
+          {
             id: generateId(),
-            messages: [
-              { role: "system", content: "" },
-              { role: "user", content: "" },
-              { role: "assistant", content: "" },
-            ],
-          })
-        }
-
-        setBlocks(newBlocks)
+            messages: parsedMessages,
+          },
+        ])
         setHasUnsavedChanges(false)
 
         toast({
           title: "Muvaffaqiyatli yuklandi",
-          description: `${parsedMessages.length} ta xabar, ${newBlocks.length} ta blok yaratildi`,
+          description: `${parsedMessages.length} ta xabar yuklandi`,
         })
       } catch (error) {
         console.error("General parsing error:", error)
@@ -360,9 +353,8 @@ export default function JSONLChatEditor() {
         const allMessages: ChatMessage[] = []
         blocks.forEach((block) => {
           block.messages.forEach((message) => {
-            if (message.content.trim() !== "") {
-              allMessages.push(message)
-            }
+            // Bo'sh xabarlarni ham qo'shamiz
+            allMessages.push(message)
           })
         })
 
@@ -552,7 +544,13 @@ export default function JSONLChatEditor() {
                     value={message.content}
                     onChange={(e) => updateMessageContent(block.id, messageIndex, e.target.value)}
                     placeholder={`${message.role} xabarini kiriting...`}
-                    className={`min-h-[100px] resize-none ${(message as any)._error ? "border-red-500 bg-red-50 dark:bg-red-950/20" : ""}`}
+                    className={`min-h-[100px] resize-none whitespace-pre-wrap font-mono text-sm ${
+                      message.role === "system"
+                        ? "bg-blue-50 dark:bg-blue-900/20"
+                        : message.role === "user"
+                          ? "bg-green-50 dark:bg-green-900/20"
+                          : "bg-purple-50 dark:bg-purple-900/20"
+                    } ${(message as any)._error ? "border-red-500" : ""}`}
                   />
 
                   {/* Xato xabarini ko'rsatish */}
