@@ -3,7 +3,7 @@
 import React, { useMemo } from "react"
 
 import { useState, useCallback, useRef, useEffect } from "react"
-import { Plus, Trash2, Download, Upload, Save, Moon, Sun, Copy, Check, MessageSquare, X, FileText, Loader2 } from "lucide-react"
+import { Plus, Trash2, Download, Upload, Save, Moon, Sun, Copy, Check, MessageSquare, X, FileText, Loader2, Pencil, Folder, LayoutGrid, AlertTriangle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -11,6 +11,8 @@ import { useTheme } from "next-themes"
 import { Toaster } from "@/components/ui/toaster"
 import { useToast } from "@/hooks/use-toast"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
+import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/components/ui/accordion"
 
 interface ChatMessage {
   role: "system" | "user" | "assistant"
@@ -41,45 +43,54 @@ interface MessageProps {
   deleteMessage: (blockId: string, messageIndex: number) => void;
 }
 const Message: React.FC<MessageProps> = React.memo(function Message({ blockId, message, messageIndex, copiedText, updateMessageRole, updateMessageContent, copyToClipboard, deleteMessage }) {
+  // Rolga qarab rangli border/fon/badge
+  let roleClass = "";
+  if (message.role === "system") roleClass = "border-l-4 border-blue-400 bg-blue-50 dark:bg-blue-950/40";
+  else if (message.role === "user") roleClass = "border-l-4 border-green-400 bg-green-50 dark:bg-green-950/40";
+  else if (message.role === "assistant") roleClass = "border-l-4 border-yellow-400 bg-yellow-50 dark:bg-yellow-950/40";
+
   return (
-    <div className="space-y-2">
+    <div className={`space-y-2 p-3 rounded-md ${roleClass}`}>
       <div className="flex items-center justify-between">
-        <Select
-          value={message.role}
-          onValueChange={(value) => updateMessageRole(blockId, messageIndex, value as "system" | "user" | "assistant")}
-        >
-          <SelectTrigger className="w-32">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="system">system</SelectItem>
-            <SelectItem value="user">user</SelectItem>
-            <SelectItem value="assistant">assistant</SelectItem>
-          </SelectContent>
-        </Select>
-        <div className="flex gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => copyToClipboard(message.content)}
-            className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
+        <div className="flex items-center gap-2">
+          <Select
+            value={message.role}
+            onValueChange={(value) => updateMessageRole(blockId, messageIndex, value as "system" | "user" | "assistant")}
           >
-            {copiedText === message.content ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />} Add
+            <SelectTrigger className="w-32">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="system">system</SelectItem>
+              <SelectItem value="user">user</SelectItem>
+              <SelectItem value="assistant">assistant</SelectItem>
+            </SelectContent>
+          </Select>
+          <span className={`px-2 py-0.5 rounded text-xs font-mono ${message.role === 'system' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-200' : message.role === 'user' ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-200' : 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-200'}`}>{message.role}</span>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => copyToClipboard(message.content)}
+            className="w-6 h-6 p-1 text-gray-400 opacity-60 hover:opacity-100 hover:text-blue-400 bg-transparent border-none shadow-none"
+            title="Add"
+          >
+            {copiedText === message.content ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
           </Button>
           <Button
-            variant="outline"
-            size="sm"
+            variant="ghost"
+            size="icon"
             onClick={() => deleteMessage(blockId, messageIndex)}
-            className="bg-red-50 hover:bg-red-100 text-red-700 border-red-200"
+            className="w-6 h-6 p-1 text-gray-400 opacity-60 hover:opacity-100 hover:text-red-400 bg-transparent border-none shadow-none"
+            title="Delete"
           >
-            <Trash2 className="w-4 h-4" /> Delete
+            <Trash2 className="w-4 h-4" />
           </Button>
         </div>
       </div>
       <Textarea
         value={message.content}
         onChange={(e) => updateMessageContent(blockId, messageIndex, e.target.value)}
-        placeholder={`${message.role} xabarini kiriting...`}
+        placeholder={`Enter ${message.role} message...`}
         className="min-h-[80px] resize-none font-mono text-sm"
       />
     </div>
@@ -138,10 +149,78 @@ const Block: React.FC<BlockProps> = React.memo(function Block({ block, blockInde
   )
 })
 
+// JsonlPreview komponenti
+function JsonlPreview({ tab }: { tab: FileTab }) {
+  const [showSystem, setShowSystem] = React.useState(true);
+  const [showUser, setShowUser] = React.useState(true);
+  const [showAssistant, setShowAssistant] = React.useState(true);
+
+  if (!tab) return null;
+  return (
+    <Accordion type="single" collapsible defaultValue="">
+      <AccordionItem value="preview">
+        <AccordionTrigger>
+          <CardHeader className="p-0">
+            <CardTitle>Preview</CardTitle>
+          </CardHeader>
+        </AccordionTrigger>
+        <AccordionContent>
+          <Card className="mb-6 border-none shadow-none bg-transparent">
+            <CardContent className="p-0">
+              {/* Filter checkboxes */}
+              <div className="flex gap-4 mb-4 items-center">
+                <label className="flex items-center gap-1 text-xs">
+                  <input type="checkbox" checked={showSystem} onChange={e => setShowSystem(e.target.checked)} />
+                  <span className="px-2 py-0.5 rounded bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-200">system</span>
+                </label>
+                <label className="flex items-center gap-1 text-xs">
+                  <input type="checkbox" checked={showUser} onChange={e => setShowUser(e.target.checked)} />
+                  <span className="px-2 py-0.5 rounded bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-200">user</span>
+                </label>
+                <label className="flex items-center gap-1 text-xs">
+                  <input type="checkbox" checked={showAssistant} onChange={e => setShowAssistant(e.target.checked)} />
+                  <span className="px-2 py-0.5 rounded bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-200">assistant</span>
+                </label>
+              </div>
+              <div className="space-y-4">
+                {tab.blocks.length === 0 ? (
+                  <div className="text-muted-foreground text-center">No blocks to preview</div>
+                ) : (
+                  tab.blocks.map((block, blockIdx) => (
+                    <div key={block.id} className="border rounded p-3 bg-muted/30">
+                      <div className="font-semibold text-xs mb-2 text-muted-foreground">Block {blockIdx + 1}</div>
+                      <div className="space-y-2">
+                        {block.messages
+                          .filter(msg =>
+                            (showSystem && msg.role === 'system') ||
+                            (showUser && msg.role === 'user') ||
+                            (showAssistant && msg.role === 'assistant')
+                          )
+                          .map((msg, msgIdx) => (
+                            <div key={msgIdx} className="flex items-start gap-2">
+                              <span className={`px-2 py-0.5 rounded text-xs font-mono ${msg.role === 'system' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-200' : msg.role === 'user' ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-200' : 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-200'}`}>{msg.role}</span>
+                              <span className="text-sm whitespace-pre-line font-mono">{msg.content || <span className="italic text-muted-foreground">(empty)</span>}</span>
+                            </div>
+                          ))}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </AccordionContent>
+      </AccordionItem>
+    </Accordion>
+  );
+}
+
 export default function JSONLChatEditor() {
   const [fileTabs, setFileTabs] = useState<FileTab[]>([])
   const [activeTabId, setActiveTabId] = useState<string>("")
   const [copiedText, setCopiedText] = useState<string | null>(null)
+  const [editingTabId, setEditingTabId] = useState<string | null>(null)
+  const [editingName, setEditingName] = useState<string>("")
 
   const fileInputRef = useRef<HTMLInputElement>(null)
   const { theme, setTheme } = useTheme()
@@ -152,8 +231,8 @@ export default function JSONLChatEditor() {
 
   useEffect(() => {
     setMounted(true)
-    // Boshlang'ich tab yaratish
-    createNewTab("Yangi fayl")
+    // Create new tab
+    createNewTab("default.jsonl")
   }, [])
 
   // Generate unique ID
@@ -167,7 +246,11 @@ export default function JSONLChatEditor() {
       blocks: [
         {
           id: generateId(),
-          messages: [{ role: "user", content: "" }],
+          messages: [
+            { role: "system", content: "" },
+            { role: "user", content: "" },
+            { role: "assistant", content: "" },
+          ],
         },
       ],
       hasUnsavedChanges: false,
@@ -182,10 +265,10 @@ export default function JSONLChatEditor() {
       setFileTabs((prev) => {
         const newTabs = prev.filter((tab) => tab.id !== tabId)
         if (newTabs.length === 0) {
-          // Agar hech qanday tab qolmasa, yangi tab yaratamiz
+          // If no tabs remain, create a new one
           const newTab: FileTab = {
             id: generateId(),
-            name: "Yangi fayl",
+            name: "default.jsonl",
             blocks: [
               {
                 id: generateId(),
@@ -197,7 +280,7 @@ export default function JSONLChatEditor() {
           setActiveTabId(newTab.id)
           return [newTab]
         } else {
-          // Agar yopilayotgan tab active bo'lsa, boshqa tabni active qilamiz
+          // If the tab being closed is active, activate the next one
           if (tabId === activeTabId) {
             setActiveTabId(newTabs[0].id)
           }
@@ -303,7 +386,11 @@ export default function JSONLChatEditor() {
   const addNewBlock = useCallback(() => {
     const newBlock: ChatBlock = {
       id: generateId(),
-      messages: [{ role: "user", content: "" }],
+      messages: [
+        { role: "system", content: "" },
+        { role: "user", content: "" },
+        { role: "assistant", content: "" },
+      ],
     }
     updateActiveTab((tab) => ({
       ...tab,
@@ -333,91 +420,74 @@ export default function JSONLChatEditor() {
         const trimmedContent = content.trim()
         if (!trimmedContent) {
           toast({
-            title: "Bo'sh fayl",
-            description: "Fayl bo'sh yoki faqat bo'sh joylardan iborat",
+            title: "Empty file",
+            description: "File is empty or contains only whitespace",
             variant: "destructive",
           })
           return
         }
 
-        let parsedMessages: ChatMessage[] = []
+        let newBlocks: ChatBlock[] = []
 
-        // Avval butun JSON obyekt sifatida parse qilishga harakat qilamiz
+        // First, try to parse as a JSON object
         try {
           const jsonData = JSON.parse(trimmedContent)
-          console.log("Successfully parsed as JSON object:", jsonData)
-
-          // "messages" massivi mavjud bo'lsa
+          // Agar messages massivli bitta obyekt bo'lsa
           if (jsonData && typeof jsonData === "object" && Array.isArray(jsonData.messages)) {
-            console.log("Messages array format detected with", jsonData.messages.length, "messages")
-
-            parsedMessages = jsonData.messages.map((msg: any) => ({
-              role: msg.role || "user",
-              content: typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content),
-            }))
+            newBlocks.push({
+              id: generateId(),
+              messages: jsonData.messages.map((msg: any) => ({
+                role: msg.role || "user",
+                content: typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content),
+              })),
+            })
+          } else if (Array.isArray(jsonData)) {
+            // Agar massiv bo'lsa, har bir element messages massivli obyekt bo'lishi mumkin
+            jsonData.forEach((item: any) => {
+              if (item && Array.isArray(item.messages)) {
+                newBlocks.push({
+                  id: generateId(),
+                  messages: item.messages.map((msg: any) => ({
+                    role: msg.role || "user",
+                    content: typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content),
+                  })),
+                })
+              }
+            })
           }
         } catch (jsonError) {
-          console.log("Not a valid JSON object, trying JSONL format:", jsonError)
-
-          // JSONL format (har qatorda alohida JSON)
+          // JSONL format (each line is a JSON object)
           const lines = trimmedContent.split("\n")
-
           for (let i = 0; i < lines.length; i++) {
             const line = lines[i].trim()
             if (line === "") continue
-
             try {
               const parsed = JSON.parse(line)
-              if (parsed && typeof parsed === "object") {
-                if (parsed.role && parsed.content) {
-                  parsedMessages.push({
-                    role: parsed.role as "system" | "user" | "assistant",
-                    content: typeof parsed.content === "string" ? parsed.content : JSON.stringify(parsed.content),
-                  })
-                } else if (parsed.messages && Array.isArray(parsed.messages)) {
-                  // Agar bu messages massivi bo'lsa
-                  parsed.messages.forEach((msg: any) => {
-                    if (msg.role && msg.content) {
-                      parsedMessages.push({
-                        role: msg.role as "system" | "user" | "assistant",
-                        content: typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content),
-                      })
-                    }
-                  })
-                } else {
-                  console.log(`Line ${i + 1} has invalid format:`, parsed)
-                  parsedMessages.push({
-                    role: "user",
-                    content: JSON.stringify(parsed),
-                  })
-                }
+              if (parsed && typeof parsed === "object" && Array.isArray(parsed.messages)) {
+                newBlocks.push({
+                  id: generateId(),
+                  messages: parsed.messages.map((msg: any) => ({
+                    role: msg.role || "user",
+                    content: typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content),
+                  })),
+                })
               }
             } catch (lineError) {
-              console.log(`Line ${i + 1} parsing error:`, lineError)
-              parsedMessages.push({
-                role: "user",
-                content: line,
+              // Agar noto'g'ri qator bo'lsa, uni bitta block sifatida saqlaymiz
+              newBlocks.push({
+                id: generateId(),
+                messages: [{ role: "user", content: line }],
               })
             }
           }
         }
 
-        if (parsedMessages.length === 0) {
-          // Agar hech qanday xabar topilmasa, butun matnni bitta xabar sifatida ko'rsatamiz
-          parsedMessages = [{ role: "user", content: trimmedContent }]
+        if (newBlocks.length === 0) {
+          // Agar hech narsa topilmasa, butun matnni bitta block sifatida saqlaymiz
+          newBlocks = [{ id: generateId(), messages: [{ role: "user", content: trimmedContent }] }]
         }
 
-        // Xabarlarni bloklarga ajratamiz (har 3 ta xabar = 1 blok)
-        const newBlocks: ChatBlock[] = []
-        for (let i = 0; i < parsedMessages.length; i += 3) {
-          const blockMessages = parsedMessages.slice(i, i + 3)
-          newBlocks.push({
-            id: generateId(),
-            messages: blockMessages,
-          })
-        }
-
-        // Yangi tab yaratamiz yoki mavjud tabni yangilaymiz
+        // Create new tab or update existing one
         const newTab: FileTab = {
           id: generateId(),
           name: fileName,
@@ -429,14 +499,14 @@ export default function JSONLChatEditor() {
         setActiveTabId(newTab.id)
 
         toast({
-          title: "Muvaffaqiyatli yuklandi",
-          description: `${parsedMessages.length} ta xabar, ${newBlocks.length} ta blokda yuklandi`,
+          title: "Successfully uploaded",
+          description: `${newBlocks.reduce((acc, b) => acc + b.messages.length, 0)} messages, ${newBlocks.length} blocks loaded`,
         })
       } catch (error) {
         console.error("General parsing error:", error)
         toast({
-          title: "Parsing xatosi",
-          description: `Faylni o'qishda xatolik: ${error instanceof Error ? error.message : "Noma'lum xato"}`,
+          title: "Parsing error",
+          description: `Error reading file: ${error instanceof Error ? error.message : "Unknown error"}`,
           variant: "destructive",
         })
       }
@@ -455,8 +525,8 @@ export default function JSONLChatEditor() {
           if (file.size > 10 * 1024 * 1024) {
             // 10MB limit
             toast({
-              title: "Fayl juda katta",
-              description: `${file.name} hajmi 10MB dan oshmasligi kerak`,
+              title: "File too large",
+              description: `${file.name} size must not exceed 10MB`,
               variant: "destructive",
             })
             continue
@@ -469,8 +539,8 @@ export default function JSONLChatEditor() {
         } catch (error) {
           console.error("Error reading file:", error)
           toast({
-            title: "Fayl o'qish xatosi",
-            description: `${file.name} ni o'qishda xatolik: ${error instanceof Error ? error.message : "Noma'lum xato"}`,
+            title: "File read error",
+            description: `${file.name} reading error: ${error instanceof Error ? error.message : "Unknown error"}`,
             variant: "destructive",
           })
         }
@@ -492,8 +562,8 @@ export default function JSONLChatEditor() {
           validFiles.push(file)
         } else {
           toast({
-            title: "Noto'g'ri fayl formati",
-            description: `${file.name} - faqat .jsonl yoki .json fayllar qabul qilinadi`,
+            title: "Invalid file format",
+            description: `${file.name} - only .jsonl or .json files are accepted`,
             variant: "destructive",
           })
         }
@@ -505,7 +575,7 @@ export default function JSONLChatEditor() {
         handleFileUpload(fileList.files)
       }
 
-      // Input ni tozalash
+      // Clear input
       event.target.value = ""
     },
     [handleFileUpload, toast],
@@ -519,14 +589,14 @@ export default function JSONLChatEditor() {
         setCopiedText(text)
         setTimeout(() => setCopiedText(null), 2000)
         toast({
-          title: "Nusxalandi",
-          description: "Matn buferga nusxalandi",
+          title: "Copied",
+          description: "Text copied to clipboard",
         })
       } catch (error) {
         console.error("Failed to copy:", error)
         toast({
-          title: "Xato",
-          description: "Nusxalashda xatolik yuz berdi",
+          title: "Error",
+          description: "Copying failed",
           variant: "destructive",
         })
       }
@@ -536,13 +606,14 @@ export default function JSONLChatEditor() {
 
   // Download file
   const downloadFile = useCallback(
-    (format: "jsonl" | "messages" = "jsonl") => {
-      if (!activeTab) return
+    (format: "jsonl" | "messages" = "jsonl", customTab?: FileTab) => {
+      const tab = customTab || activeTab
+      if (!tab) return
 
       try {
-        // Barcha xabarlarni yig'ish
+        // Collect all messages
         const allMessages: ChatMessage[] = []
-        activeTab.blocks.forEach((block) => {
+        tab.blocks.forEach((block) => {
           block.messages.forEach((message) => {
             if (message.content.trim() !== "") {
               allMessages.push(message)
@@ -552,8 +623,8 @@ export default function JSONLChatEditor() {
 
         if (allMessages.length === 0) {
           toast({
-            title: "Xabarlar yo'q",
-            description: "Yuklab olish uchun kamida bitta xabar kiriting",
+            title: "No messages",
+            description: "Please enter at least one message to load",
             variant: "destructive",
           })
           return
@@ -568,11 +639,14 @@ export default function JSONLChatEditor() {
             messages: allMessages,
           }
           content = JSON.stringify(messagesObj, null, 2)
-          filename = activeTab.name.replace(".jsonl", ".json") || "chat.json"
+          filename = tab.name.replace(".jsonl", ".json") || "chat.json"
         } else {
-          // JSONL format
-          content = allMessages.map((msg) => JSON.stringify(msg)).join("\n")
-          filename = activeTab.name || "chat.jsonl"
+          // Har bir blockni {messages: [...]} ko'rinishida alohida qator qilib yozamiz
+          content = tab.blocks
+            .filter((block) => block.messages.length > 0)
+            .map((block) => JSON.stringify({ messages: block.messages }))
+            .join("\n")
+          filename = tab.name || "chat.jsonl"
         }
 
         const blob = new Blob([content], { type: "application/json" })
@@ -585,18 +659,18 @@ export default function JSONLChatEditor() {
         document.body.removeChild(a)
         URL.revokeObjectURL(url)
 
-        // Tab ni saved deb belgilaymiz
+        // Mark tab as saved
         updateActiveTab((tab) => ({ ...tab, hasUnsavedChanges: false }))
 
         toast({
-          title: "Muvaffaqiyatli",
-          description: `${filename} yuklab olindi`,
+          title: "Success",
+          description: `${filename} downloaded`,
         })
       } catch (error) {
         console.error("Error downloading file:", error)
         toast({
-          title: "Xato",
-          description: "Faylni yuklab olishda xatolik yuz berdi",
+          title: "Error",
+          description: "Failed to download file",
           variant: "destructive",
         })
       }
@@ -604,7 +678,7 @@ export default function JSONLChatEditor() {
     [activeTab, updateActiveTab, toast],
   )
 
-  // Test uchun sample data
+  // Sample data for testing
   const loadSampleData = useCallback(() => {
     if (!activeTab) return
 
@@ -612,12 +686,12 @@ export default function JSONLChatEditor() {
       {
         id: generateId(),
         messages: [
-          { role: "system", content: "Siz foydali AI yordamchisiz." },
-          { role: "user", content: "Salom! Qanday yordam bera olasiz?" },
+          { role: "system", content: "You are a helpful AI assistant." },
+          { role: "user", content: "Hello! How can I help you?" },
           {
             role: "assistant",
             content:
-              "Salom! Men turli savollarga javob berish, matn yozish va boshqa vazifalarni bajarishda yordam bera olaman.",
+              "Hello! I can answer questions, write text, and perform other tasks.",
           },
         ],
       },
@@ -630,10 +704,23 @@ export default function JSONLChatEditor() {
     }))
 
     toast({
-      title: "Namuna yuklandi",
-      description: "Test uchun namuna ma'lumotlar yuklandi",
+      title: "Sample data loaded",
+      description: "Sample data loaded for testing",
     })
   }, [activeTab, updateActiveTab, toast])
+
+  // Fayl nomini saqlash
+  const saveTabName = (tabId: string) => {
+    setFileTabs((prev) => prev.map((tab) => {
+      if (tab.id === tabId) {
+        // Faqat asosiy nomni yangilash, extensionni saqlash
+        const ext = tab.name.endsWith('.jsonl') ? '.jsonl' : ''
+        return { ...tab, name: editingName + ext, hasUnsavedChanges: true }
+      }
+      return tab
+    }))
+    setEditingTabId(null)
+  }
 
   if (!mounted) {
     return null
@@ -650,18 +737,18 @@ export default function JSONLChatEditor() {
             </div>
             <div>
               <h1 className="text-xl md:text-2xl font-bold">JSONL Chat Editor</h1>
-              <p className="text-xs text-muted-foreground">{fileTabs.length} ta fayl ochiq</p>
+              <p className="text-xs text-muted-foreground">{fileTabs.length} open files</p>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
-            <Button onClick={() => createNewTab("Yangi fayl")} variant="outline" size="sm">
+            <Button onClick={() => createNewTab("default.jsonl")} variant="outline" size="sm">
               <Plus className="w-4 h-4 mr-2" />
-              Yangi Tab
+              New Tab
             </Button>
 
             <Button onClick={loadSampleData} variant="outline" size="sm">
-              🧪 Test Ma'lumot
+              🧪 Test Data
             </Button>
 
             <Button
@@ -675,7 +762,7 @@ export default function JSONLChatEditor() {
               ) : (
                 <Upload className="w-4 h-4 mr-2" />
               )}
-              Fayl Yuklash
+              Upload File
             </Button>
             <input
               ref={fileInputRef}
@@ -689,7 +776,7 @@ export default function JSONLChatEditor() {
                     await new Promise((res) => setTimeout(res, 10))
                     setUploadProgress(i)
                   }
-                  // Faylni o'qish va parseJSONL orqali ochish (oldingi holat)
+                  // Read file and parseJSONL (previous state)
                   const file = e.target.files[0]
                   const reader = new FileReader()
                   reader.onload = (event) => {
@@ -697,7 +784,7 @@ export default function JSONLChatEditor() {
                       const text = event.target?.result as string
                       parseJSONL(text, file.name)
                     } catch (err) {
-                      toast({ title: "Faylni o'qib bo'lmadi", description: String(err), variant: "destructive" })
+                      toast({ title: "Failed to read file", description: String(err), variant: "destructive" })
                     }
                     setIsUploading(false)
                   }
@@ -716,25 +803,20 @@ export default function JSONLChatEditor() {
                       style={{ width: `${uploadProgress}%` }}
                     />
                   </div>
-                  <span className="text-sm font-medium text-gray-700 dark:text-gray-200">Yuklanmoqda... {uploadProgress}%</span>
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-200">Uploading... {uploadProgress}%</span>
                 </div>
               </div>
             )}
 
-            <Button onClick={() => downloadFile("messages")} variant="outline" size="sm">
-              <Save className="w-4 h-4 mr-2" />
-              JSON
-            </Button>
-
-            <Button onClick={() => downloadFile("jsonl")} variant="default" size="sm">
-              <Download className="w-4 h-4 mr-2" />
+            <Button onClick={() => downloadFile("jsonl")} variant="default" size="sm" className="bg-green-600 hover:bg-green-700 text-white flex items-center gap-2">
+              <Download className="w-4 h-4" />
               JSONL
             </Button>
 
             <Button variant="ghost" size="icon" onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>
               <Sun className="h-4 w-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
               <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
-              <span className="sr-only">Mavzu o'zgartirish</span>
+              <span className="sr-only">Toggle theme</span>
             </Button>
           </div>
         </div>
@@ -774,51 +856,112 @@ export default function JSONLChatEditor() {
           {/* Tab Contents */}
           {fileTabs.map((tab) => (
             <TabsContent key={tab.id} value={tab.id} className="mt-0">
-              {/* Fayl ma'lumotlari */}
-              <div className="mb-4 p-4 bg-white dark:bg-gray-800 rounded-lg shadow-sm border">
-                <h3 className="font-semibold mb-2">Fayl ma'lumotlari:</h3>
-                <p className="text-sm text-muted-foreground">
-                  📁 Fayl nomi: {tab.name}
-                  <br />📊 Jami bloklar: {tab.blocks.length}
-                  <br />📝 Jami xabarlar: {tab.blocks.reduce((total, block) => total + block.messages.length, 0)}
-                  <br />
-                  {tab.hasUnsavedChanges && <span className="text-orange-500">⚠️ O'zgarishlar saqlanmagan</span>}
-                </p>
-              </div>
-
-              {/* Chat Blocks */}
-              <div className="space-y-6">
-                {tab.blocks.map((block, blockIndex) => (
-                  <Block
-                    key={block.id}
-                    block={block}
-                    blockIndex={blockIndex}
-                    copiedText={copiedText}
-                    updateMessageRole={updateMessageRole}
-                    updateMessageContent={updateMessageContent}
-                    copyToClipboard={copyToClipboard}
-                    deleteMessage={deleteMessage}
-                    addMessage={addMessage}
-                    deleteBlock={deleteBlock}
-                  />
-                ))}
-
-                {/* Add New Block Button */}
-                <div className="text-center">
-                  <Button onClick={addNewBlock} className="bg-green-600 hover:bg-green-700 text-white">
-                    <Plus className="w-4 h-4 mr-2" />
-                    Add message block
-                  </Button>
-                </div>
-
-                {tab.blocks.length === 0 && (
-                  <div className="text-center py-12 text-muted-foreground">
-                    <MessageSquare className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                    <p className="text-lg mb-2">Hech qanday blok yo'q</p>
-                    <p className="text-sm">Yuqoridagi tugmani bosib yangi blok qo'shing</p>
+              <div className="flex flex-col gap-4 w-full"> {/* Block container boshlandi */}
+                {/* File information */}
+                <div className="mb-4 p-4 bg-white dark:bg-gray-800 rounded-lg shadow-sm border">
+                  <h3 className="font-semibold mb-2">File information:</h3>
+                  <div className="flex items-center gap-2 mb-1">
+                    <Folder className="w-4 h-4 text-muted-foreground" />
+                    <span className="text-sm text-muted-foreground">File name:</span>
+                    {editingTabId === tab.id ? (
+                      <>
+                        <input
+                          className="border rounded px-2 py-1 text-sm w-36 focus:outline-none focus:ring-2 focus:ring-green-500 bg-transparent dark:bg-gray-900"
+                          value={editingName}
+                          autoFocus
+                          onChange={e => setEditingName(e.target.value.replace(/[^a-zA-Z0-9_-]/g, ''))}
+                          onBlur={() => saveTabName(tab.id)}
+                          onKeyDown={e => {
+                            if (e.key === "Enter") saveTabName(tab.id)
+                            if (e.key === "Escape") setEditingTabId(null)
+                          }}
+                          maxLength={48}
+                        />
+                        <span className="ml-1 text-muted-foreground text-sm select-none">.jsonl</span>
+                        <button className="ml-1 text-green-600 hover:text-green-800" onClick={() => saveTabName(tab.id)}>
+                          <Check className="w-4 h-4" />
+                        </button>
+                        <button className="ml-1 text-gray-400 hover:text-red-500" onClick={() => setEditingTabId(null)}>
+                          <X className="w-4 h-4" />
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <span className="truncate max-w-xs inline-block align-middle">{tab.name}</span>
+                        <button
+                          className="ml-1 text-gray-400 hover:text-green-600"
+                          title="Edit file name"
+                          onClick={() => {
+                            setEditingTabId(tab.id)
+                            // Faqat asosiy nomni inputga joylash
+                            setEditingName(tab.name.replace(/\.jsonl$/, ""))
+                          }}
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                      </>
+                    )}
                   </div>
-                )}
-              </div>
+                  <div className="text-sm text-muted-foreground flex items-center gap-2 mb-1">
+                    <LayoutGrid className="w-4 h-4 mr-1" /> Total blocks: {tab.blocks.length}
+                  </div>
+                  <div className="text-sm text-muted-foreground flex items-center gap-2 mb-1">
+                    <MessageSquare className="w-4 h-4 mr-1" /> Total messages: {tab.blocks.reduce((total, block) => total + block.messages.length, 0)}
+                  </div>
+                  {tab.hasUnsavedChanges && (
+                    <div className="text-sm text-orange-500 flex items-center gap-2 mt-1">
+                      <AlertTriangle className="w-4 h-4" />
+                      <span>Unsaved changes</span>
+                      <button
+                        className="ml-2 px-3 py-1 bg-green-600 hover:bg-green-700 text-white rounded flex items-center gap-1 text-xs font-semibold shadow"
+                        onClick={() => {
+                          downloadFile("jsonl", tab)
+                          setFileTabs((prev) => prev.map(t => t.id === tab.id ? { ...t, hasUnsavedChanges: false } : t))
+                        }}
+                        title="Save changes"
+                      >
+                        <Download className="w-4 h-4" /> Save
+                      </button>
+                    </div>
+                  )}
+                </div>
+                {/* Preview bo'limi */}
+                <JsonlPreview tab={tab} />
+
+                {/* Chat Blocks */}
+                <div className="space-y-6">
+                  {tab.blocks.map((block, blockIndex) => (
+                    <Block
+                      key={block.id}
+                      block={block}
+                      blockIndex={blockIndex}
+                      copiedText={copiedText}
+                      updateMessageRole={updateMessageRole}
+                      updateMessageContent={updateMessageContent}
+                      copyToClipboard={copyToClipboard}
+                      deleteMessage={deleteMessage}
+                      addMessage={addMessage}
+                      deleteBlock={deleteBlock}
+                    />
+                  ))}
+
+                  {/* Add New Block Button */}
+                  <div className="text-center">
+                    <Button onClick={addNewBlock} className="bg-green-600 hover:bg-green-700 text-white">
+                      <Plus className="w-4 h-4 mr-2" />
+                      Add message block
+                    </Button>
+                  </div>
+
+                  {tab.blocks.length === 0 && (
+                    <div className="text-center py-12 text-muted-foreground">
+                      <MessageSquare className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                      <p className="text-lg mb-2">No blocks yet</p>
+                      <p className="text-sm">Click the button above to add a new block</p>
+                    </div>
+                  )}
+                </div>
+              </div> {/* Block container tugadi */}
             </TabsContent>
           ))}
         </Tabs>

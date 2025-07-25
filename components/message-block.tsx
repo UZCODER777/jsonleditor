@@ -51,7 +51,7 @@ export function MessageBlock({
       <Textarea
         value={content}
         onChange={(e) => onContentChange(e.target.value)}
-        placeholder={`${role} xabarini kiriting...`}
+        placeholder={`Enter ${role} message...`}
         className="min-h-[100px] resize-none"
       />
     </div>
