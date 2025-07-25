@@ -184,93 +184,150 @@ export default function JSONLChatEditor() {
   }, [autoSave, hasUnsavedChanges])
 
   // Parse JSONL content
-  const parseJSONL = useCallback((content: string) => {
-    setIsProcessing(true)
-    const lines = content.split("\n")
-    const parsedMessages: ChatMessage[] = []
-
-    lines.forEach((line, index) => {
-      const trimmedLine = line.trim()
-      if (trimmedLine === "") return
+  const parseJSONL = useCallback(
+    (content: string) => {
+      setIsProcessing(true)
+      const parsedMessages: ChatMessage[] = []
 
       try {
-        const parsed = JSON.parse(trimmedLine)
+        // Avval bitta JSON obyekt sifatida parse qilishga harakat qilamiz
+        const singleJson = JSON.parse(content.trim())
 
-        // Validate chat message format
-        if (typeof parsed === "object" && parsed.role && parsed.content) {
-          if (["system", "user", "assistant"].includes(parsed.role)) {
-            parsedMessages.push({
-              id: generateId(),
-              role: parsed.role,
-              content: parsed.content,
-              isValid: true,
-            })
-          } else {
+        // Agar messages array mavjud bo'lsa
+        if (singleJson.messages && Array.isArray(singleJson.messages)) {
+          singleJson.messages.forEach((msg: any, index: number) => {
+            if (typeof msg === "object" && msg.role && msg.content) {
+              if (["system", "user", "assistant"].includes(msg.role)) {
+                parsedMessages.push({
+                  id: generateId(),
+                  role: msg.role,
+                  content: msg.content,
+                  isValid: true,
+                })
+              } else {
+                parsedMessages.push({
+                  id: generateId(),
+                  role: "user",
+                  content: JSON.stringify(msg),
+                  isValid: false,
+                  error: `Noto'g'ri role: ${msg.role}`,
+                })
+              }
+            } else {
+              parsedMessages.push({
+                id: generateId(),
+                role: "user",
+                content: JSON.stringify(msg),
+                isValid: false,
+                error: "Chat format emas (role va content kerak)",
+              })
+            }
+          })
+        } else {
+          // Agar messages array yo'q bo'lsa, xato
+          parsedMessages.push({
+            id: generateId(),
+            role: "user",
+            content: content,
+            isValid: false,
+            error: "Messages array topilmadi",
+          })
+        }
+      } catch {
+        // Agar bitta JSON sifatida parse bo'lmasa, JSONL sifatida harakat qilamiz
+        const lines = content.split("\n")
+
+        lines.forEach((line, index) => {
+          const trimmedLine = line.trim()
+          if (trimmedLine === "") return
+
+          try {
+            const parsed = JSON.parse(trimmedLine)
+
+            // Validate chat message format
+            if (typeof parsed === "object" && parsed.role && parsed.content) {
+              if (["system", "user", "assistant"].includes(parsed.role)) {
+                parsedMessages.push({
+                  id: generateId(),
+                  role: parsed.role,
+                  content: parsed.content,
+                  isValid: true,
+                })
+              } else {
+                parsedMessages.push({
+                  id: generateId(),
+                  role: "user",
+                  content: trimmedLine,
+                  isValid: false,
+                  error: `Noto'g'ri role: ${parsed.role}`,
+                })
+              }
+            } else {
+              parsedMessages.push({
+                id: generateId(),
+                role: "user",
+                content: trimmedLine,
+                isValid: false,
+                error: "Chat format emas (role va content kerak)",
+              })
+            }
+          } catch (error) {
             parsedMessages.push({
               id: generateId(),
               role: "user",
               content: trimmedLine,
               isValid: false,
-              error: `Noto'g'ri role: ${parsed.role}`,
+              error: error instanceof Error ? error.message : "Noto'g'ri JSON",
             })
           }
-        } else {
-          parsedMessages.push({
-            id: generateId(),
-            role: "user",
-            content: trimmedLine,
-            isValid: false,
-            error: "Chat format emas (role va content kerak)",
-          })
-        }
-      } catch (error) {
-        parsedMessages.push({
-          id: generateId(),
-          role: "user",
-          content: trimmedLine,
-          isValid: false,
-          error: error instanceof Error ? error.message : "Noto'g'ri JSON",
         })
       }
-    })
 
-    setMessages(parsedMessages)
-    setIsProcessing(false)
-    validateContent(parsedMessages)
-  }, [])
+      setMessages(parsedMessages)
+      setIsProcessing(false)
+    },
+    [generateId, setIsProcessing, setMessages],
+  )
 
   // Validate content
-  const validateContent = (msgs: ChatMessage[]) => {
-    const errors: Array<{ id: string; error: string }> = []
-    const warnings: Array<{ id: string; warning: string }> = []
-    let validMessages = 0
+  const validateContent = useCallback(
+    (msgs: ChatMessage[]) => {
+      const errors: Array<{ id: string; error: string }> = []
+      const warnings: Array<{ id: string; warning: string }> = []
+      let validMessages = 0
 
-    msgs.forEach((msg) => {
-      if (msg.isValid) {
-        validMessages++
+      msgs.forEach((msg) => {
+        if (msg.isValid) {
+          validMessages++
 
-        // Check for warnings
-        if (msg.content.trim().length === 0) {
-          warnings.push({ id: msg.id, warning: "Bo'sh xabar" })
+          // Check for warnings
+          if (msg.content.trim().length === 0) {
+            warnings.push({ id: msg.id, warning: "Bo'sh xabar" })
+          }
+          if (msg.content.length > 5000) {
+            warnings.push({ id: msg.id, warning: "Juda uzun xabar (>5000 belgi)" })
+          }
+        } else {
+          errors.push({ id: msg.id, error: msg.error || "Noto'g'ri format" })
         }
-        if (msg.content.length > 5000) {
-          warnings.push({ id: msg.id, warning: "Juda uzun xabar (>5000 belgi)" })
-        }
-      } else {
-        errors.push({ id: msg.id, error: msg.error || "Noto'g'ri format" })
+      })
+
+      const result: ValidationResult = {
+        isValid: errors.length === 0,
+        totalMessages: msgs.length,
+        validMessages,
+        errors,
+        warnings,
       }
-    })
 
-    const result: ValidationResult = {
-      isValid: errors.length === 0,
-      totalMessages: msgs.length,
-      validMessages,
-      errors,
-      warnings,
-    }
+      setValidationResult(result)
+    },
+    [setValidationResult],
+  )
 
-    setValidationResult(result)
-  }
+  useEffect(() => {
+    validateContent(messages)
+  }, [messages, validateContent])
 
   // File upload handler
   const handleFileUpload = useCallback(
@@ -295,7 +352,7 @@ export default function JSONLChatEditor() {
         setIsProcessing(false)
       }
     },
-    [parseJSONL],
+    [parseJSONL, setFileInfo, setIsProcessing, setOriginalContent, setHasUnsavedChanges],
   )
 
   // File selection handler
@@ -324,116 +381,152 @@ export default function JSONLChatEditor() {
         handleFileSelect(droppedFile)
       }
     },
-    [handleFileSelect],
+    [handleFileSelect, setIsDragOver],
   )
 
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    setIsDragOver(true)
-  }, [])
+  const handleDragOver = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault()
+      setIsDragOver(true)
+    },
+    [setIsDragOver],
+  )
 
-  const handleDragLeave = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    setIsDragOver(false)
-  }, [])
+  const handleDragLeave = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault()
+      setIsDragOver(false)
+    },
+    [setIsDragOver],
+  )
 
   // Update message
-  const updateMessage = (id: string, field: "role" | "content", value: string) => {
-    const updatedMessages = messages.map((msg) => {
-      if (msg.id === id) {
-        const updated = { ...msg, [field]: value, isValid: true, error: undefined }
-        return updated
-      }
-      return msg
-    })
-    setMessages(updatedMessages)
-    setHasUnsavedChanges(true)
-    validateContent(updatedMessages)
-  }
+  const updateMessage = useCallback(
+    (id: string, field: "role" | "content", value: string) => {
+      const updatedMessages = messages.map((msg) => {
+        if (msg.id === id) {
+          const updated = { ...msg, [field]: value, isValid: true, error: undefined }
+          return updated
+        }
+        return msg
+      })
+      setMessages(updatedMessages)
+      setHasUnsavedChanges(true)
+    },
+    [messages, setMessages, setHasUnsavedChanges],
+  )
 
   // Add new message
-  const addNewMessage = (afterId?: string) => {
-    const newMessage: ChatMessage = {
-      id: generateId(),
-      role: "user",
-      content: "",
-      isValid: true,
-    }
+  const addNewMessage = useCallback(
+    (afterId?: string) => {
+      const newMessage: ChatMessage = {
+        id: generateId(),
+        role: "user",
+        content: "",
+        isValid: true,
+      }
 
-    if (afterId) {
-      const index = messages.findIndex((msg) => msg.id === afterId)
-      const updatedMessages = [...messages]
-      updatedMessages.splice(index + 1, 0, newMessage)
-      setMessages(updatedMessages)
-    } else {
-      setMessages([...messages, newMessage])
-    }
+      if (afterId) {
+        const index = messages.findIndex((msg) => msg.id === afterId)
+        const updatedMessages = [...messages]
+        updatedMessages.splice(index + 1, 0, newMessage)
+        setMessages(updatedMessages)
+      } else {
+        setMessages([...messages, newMessage])
+      }
 
-    setHasUnsavedChanges(true)
-    validateContent([...messages, newMessage])
-  }
+      setHasUnsavedChanges(true)
+    },
+    [generateId, messages, setMessages, setHasUnsavedChanges],
+  )
 
   // Delete message
-  const deleteMessage = (id: string) => {
-    const updatedMessages = messages.filter((msg) => msg.id !== id)
-    setMessages(updatedMessages)
-    setHasUnsavedChanges(true)
-    validateContent(updatedMessages)
-  }
+  const deleteMessage = useCallback(
+    (id: string) => {
+      const updatedMessages = messages.filter((msg) => msg.id !== id)
+      setMessages(updatedMessages)
+      setHasUnsavedChanges(true)
+    },
+    [messages, setMessages, setHasUnsavedChanges],
+  )
 
   // Load template
-  const loadTemplate = (templateName: string) => {
-    const template = CHAT_TEMPLATES.find((t) => t.name === templateName)
-    if (template) {
-      const templateMessages: ChatMessage[] = template.messages.map((msg) => ({
-        id: generateId(),
-        role: msg.role,
-        content: msg.content,
-        isValid: true,
-      }))
-      setMessages(templateMessages)
-      setHasUnsavedChanges(true)
-      validateContent(templateMessages)
-    }
-  }
+  const loadTemplate = useCallback(
+    (templateName: string) => {
+      const template = CHAT_TEMPLATES.find((t) => t.name === templateName)
+      if (template) {
+        const templateMessages: ChatMessage[] = template.messages.map((msg) => ({
+          id: generateId(),
+          role: msg.role,
+          content: msg.content,
+          isValid: true,
+        }))
+        setMessages(templateMessages)
+        setHasUnsavedChanges(true)
+      }
+    },
+    [CHAT_TEMPLATES, generateId, setMessages, setHasUnsavedChanges],
+  )
 
   // Copy to clipboard
-  const copyToClipboard = async (text: string) => {
-    try {
-      await navigator.clipboard.writeText(text)
-      setCopiedText(text)
-      setTimeout(() => setCopiedText(null), 2000)
-    } catch (error) {
-      console.error("Failed to copy:", error)
-    }
-  }
+  const copyToClipboard = useCallback(
+    async (text: string) => {
+      try {
+        await navigator.clipboard.writeText(text)
+        setCopiedText(text)
+        setTimeout(() => setCopiedText(null), 2000)
+      } catch (error) {
+        console.error("Failed to copy:", error)
+      }
+    },
+    [setCopiedText],
+  )
 
   // Download file
-  const downloadFile = () => {
-    const content = messages
-      .filter((msg) => msg.isValid)
-      .map((msg) => JSON.stringify({ role: msg.role, content: msg.content }))
-      .join("\n")
+  const downloadFile = useCallback(
+    (format: "jsonl" | "messages" = "jsonl") => {
+      const validMessages = messages.filter((msg) => msg.isValid)
 
-    const blob = new Blob([content], { type: "application/json" })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement("a")
-    a.href = url
-    a.download = fileInfo?.name || "chat.jsonl"
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
-    setHasUnsavedChanges(false)
-  }
+      let content: string
+      let filename: string
+
+      if (format === "messages") {
+        // Messages array format
+        const messagesObj = {
+          messages: validMessages.map((msg) => ({
+            role: msg.role,
+            content: msg.content,
+          })),
+        }
+        content = JSON.stringify(messagesObj, null, 2)
+        filename = fileInfo?.name?.replace(".jsonl", ".json") || "chat.json"
+      } else {
+        // JSONL format
+        content = validMessages.map((msg) => JSON.stringify({ role: msg.role, content: msg.content })).join("\n")
+        filename = fileInfo?.name || "chat.jsonl"
+      }
+
+      const blob = new Blob([content], { type: "application/json" })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+      setHasUnsavedChanges(false)
+    },
+    [messages, fileInfo, setHasUnsavedChanges],
+  )
 
   // Reset to original
-  const resetToOriginal = () => {
+  const resetToOriginal = useCallback(() => {
     if (originalContent) {
       parseJSONL(originalContent)
       setHasUnsavedChanges(false)
     }
-  }
+  }, [originalContent, parseJSONL, setHasUnsavedChanges])
 
   // Filter messages
   const filteredMessages = messages.filter((msg) => {
@@ -478,10 +571,16 @@ export default function JSONLChatEditor() {
 
           <div className="flex items-center gap-2">
             {hasUnsavedChanges && (
-              <Button onClick={downloadFile} size="sm" className="bg-green-600 hover:bg-green-700">
-                <Save className="w-4 h-4 mr-2" />
-                Saqlash (Ctrl+S)
-              </Button>
+              <div className="flex gap-2">
+                <Button onClick={() => downloadFile("jsonl")} size="sm" className="bg-green-600 hover:bg-green-700">
+                  <Save className="w-4 h-4 mr-2" />
+                  JSONL (Ctrl+S)
+                </Button>
+                <Button onClick={() => downloadFile("messages")} size="sm" variant="outline">
+                  <Save className="w-4 h-4 mr-2" />
+                  Messages
+                </Button>
+              </div>
             )}
             <Button variant="ghost" size="icon" onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>
               <Sun className="h-4 w-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
@@ -588,7 +687,7 @@ export default function JSONLChatEditor() {
                   {/* Templates */}
                   <div className="space-y-2">
                     <Label className="text-sm font-medium">Shablonlar</Label>
-                    <Select value={selectedTemplate} onValueChange={loadTemplate}>
+                    <Select value={selectedTemplate} onValueChange={setSelectedTemplate}>
                       <SelectTrigger>
                         <SelectValue placeholder="Shablon tanlang" />
                       </SelectTrigger>
@@ -696,6 +795,16 @@ export default function JSONLChatEditor() {
                           <TooltipContent>Barcha xabarlarni nusxalash</TooltipContent>
                         </Tooltip>
                       </TooltipProvider>
+
+                      <Select onValueChange={(value: "jsonl" | "messages") => downloadFile(value)}>
+                        <SelectTrigger className="w-32">
+                          <SelectValue placeholder="Export" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="jsonl">JSONL Format</SelectItem>
+                          <SelectItem value="messages">Messages Format</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
                   </div>
                 </CardHeader>
