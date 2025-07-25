@@ -1,6 +1,6 @@
 "use client"
 
-import type React from "react"
+import React, { useMemo } from "react"
 
 import { useState, useCallback, useRef, useEffect } from "react"
 import { Plus, Trash2, Download, Upload, Save, Moon, Sun, Copy, Check, MessageSquare, X, FileText, Loader2 } from "lucide-react"
@@ -28,6 +28,115 @@ interface FileTab {
   blocks: ChatBlock[]
   hasUnsavedChanges: boolean
 }
+
+// Memoized Message component
+interface MessageProps {
+  blockId: string;
+  message: ChatMessage;
+  messageIndex: number;
+  copiedText: string | null;
+  updateMessageRole: (blockId: string, messageIndex: number, role: "system" | "user" | "assistant") => void;
+  updateMessageContent: (blockId: string, messageIndex: number, content: string) => void;
+  copyToClipboard: (text: string) => void;
+  deleteMessage: (blockId: string, messageIndex: number) => void;
+}
+const Message: React.FC<MessageProps> = React.memo(function Message({ blockId, message, messageIndex, copiedText, updateMessageRole, updateMessageContent, copyToClipboard, deleteMessage }) {
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <Select
+          value={message.role}
+          onValueChange={(value) => updateMessageRole(blockId, messageIndex, value as "system" | "user" | "assistant")}
+        >
+          <SelectTrigger className="w-32">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="system">system</SelectItem>
+            <SelectItem value="user">user</SelectItem>
+            <SelectItem value="assistant">assistant</SelectItem>
+          </SelectContent>
+        </Select>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => copyToClipboard(message.content)}
+            className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
+          >
+            {copiedText === message.content ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />} Add
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => deleteMessage(blockId, messageIndex)}
+            className="bg-red-50 hover:bg-red-100 text-red-700 border-red-200"
+          >
+            <Trash2 className="w-4 h-4" /> Delete
+          </Button>
+        </div>
+      </div>
+      <Textarea
+        value={message.content}
+        onChange={(e) => updateMessageContent(blockId, messageIndex, e.target.value)}
+        placeholder={`${message.role} xabarini kiriting...`}
+        className="min-h-[80px] resize-none font-mono text-sm"
+      />
+    </div>
+  )
+})
+
+// Memoized Block component
+interface BlockProps {
+  block: ChatBlock;
+  blockIndex: number;
+  copiedText: string | null;
+  updateMessageRole: (blockId: string, messageIndex: number, role: "system" | "user" | "assistant") => void;
+  updateMessageContent: (blockId: string, messageIndex: number, content: string) => void;
+  copyToClipboard: (text: string) => void;
+  deleteMessage: (blockId: string, messageIndex: number) => void;
+  addMessage: (blockId: string) => void;
+  deleteBlock: (blockId: string) => void;
+}
+const Block: React.FC<BlockProps> = React.memo(function Block({ block, blockIndex, copiedText, updateMessageRole, updateMessageContent, copyToClipboard, deleteMessage, addMessage, deleteBlock }) {
+  return (
+    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border">
+      <div className="p-4 space-y-4">
+        {block.messages.map((message, messageIndex) => (
+          <Message
+            key={`${block.id}_${messageIndex}`}
+            blockId={block.id}
+            message={message}
+            messageIndex={messageIndex}
+            copiedText={copiedText}
+            updateMessageRole={updateMessageRole}
+            updateMessageContent={updateMessageContent}
+            copyToClipboard={copyToClipboard}
+            deleteMessage={deleteMessage}
+          />
+        ))}
+      </div>
+      <div className="flex items-center justify-between p-4 border-t bg-gray-50 dark:bg-gray-700 rounded-b-lg">
+        <Button
+          onClick={() => addMessage(block.id)}
+          variant="outline"
+          size="sm"
+          className="bg-green-50 hover:bg-green-100 text-green-700 border-green-200"
+        >
+          <Plus className="w-4 h-4 mr-2" /> Add message
+        </Button>
+        <Button
+          onClick={() => deleteBlock(block.id)}
+          variant="outline"
+          size="sm"
+          className="bg-red-50 hover:bg-red-100 text-red-700 border-red-200"
+        >
+          <Trash2 className="w-4 h-4 mr-2" /> Delete block
+        </Button>
+      </div>
+    </div>
+  )
+})
 
 export default function JSONLChatEditor() {
   const [fileTabs, setFileTabs] = useState<FileTab[]>([])
@@ -680,88 +789,18 @@ export default function JSONLChatEditor() {
               {/* Chat Blocks */}
               <div className="space-y-6">
                 {tab.blocks.map((block, blockIndex) => (
-                  <div key={block.id} className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border">
-                    {/* Messages in Block */}
-                    <div className="p-4 space-y-4">
-                      {block.messages.map((message, messageIndex) => (
-                        <div key={`${block.id}_${messageIndex}`} className="space-y-2">
-                          <div className="flex items-center justify-between">
-                            <Select
-                              value={message.role}
-                              onValueChange={(value: "system" | "user" | "assistant") =>
-                                updateMessageRole(block.id, messageIndex, value)
-                              }
-                            >
-                              <SelectTrigger className="w-32">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="system">system</SelectItem>
-                                <SelectItem value="user">user</SelectItem>
-                                <SelectItem value="assistant">assistant</SelectItem>
-                              </SelectContent>
-                            </Select>
-
-                            <div className="flex gap-2">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => copyToClipboard(message.content)}
-                                className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
-                              >
-                                {copiedText === message.content ? (
-                                  <Check className="w-4 h-4" />
-                                ) : (
-                                  <Copy className="w-4 h-4" />
-                                )}
-                                Add
-                              </Button>
-
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => deleteMessage(block.id, messageIndex)}
-                                className="bg-red-50 hover:bg-red-100 text-red-700 border-red-200"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                                Delete
-                              </Button>
-                            </div>
-                          </div>
-
-                          <Textarea
-                            value={message.content}
-                            onChange={(e) => updateMessageContent(block.id, messageIndex, e.target.value)}
-                            placeholder={`${message.role} xabarini kiriting...`}
-                            className="min-h-[80px] resize-none font-mono text-sm"
-                          />
-                        </div>
-                      ))}
-                    </div>
-
-                    {/* Block Footer - faqat pastdagi tugmalar */}
-                    <div className="flex items-center justify-between p-4 border-t bg-gray-50 dark:bg-gray-700 rounded-b-lg">
-                      <Button
-                        onClick={() => addMessage(block.id)}
-                        variant="outline"
-                        size="sm"
-                        className="bg-green-50 hover:bg-green-100 text-green-700 border-green-200"
-                      >
-                        <Plus className="w-4 h-4 mr-2" />
-                        Add message
-                      </Button>
-
-                      <Button
-                        onClick={() => deleteBlock(block.id)}
-                        variant="outline"
-                        size="sm"
-                        className="bg-red-50 hover:bg-red-100 text-red-700 border-red-200"
-                      >
-                        <Trash2 className="w-4 h-4 mr-2" />
-                        Delete block
-                      </Button>
-                    </div>
-                  </div>
+                  <Block
+                    key={block.id}
+                    block={block}
+                    blockIndex={blockIndex}
+                    copiedText={copiedText}
+                    updateMessageRole={updateMessageRole}
+                    updateMessageContent={updateMessageContent}
+                    copyToClipboard={copyToClipboard}
+                    deleteMessage={deleteMessage}
+                    addMessage={addMessage}
+                    deleteBlock={deleteBlock}
+                  />
                 ))}
 
                 {/* Add New Block Button */}
