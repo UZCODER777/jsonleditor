@@ -81,7 +81,7 @@ const Message: React.FC<MessageProps> = React.memo(function Message({ blockId, m
       <Textarea
         value={message.content}
         onChange={(e) => updateMessageContent(blockId, messageIndex, e.target.value)}
-        placeholder={`${message.role} xabarini kiriting...`}
+        placeholder={`Enter ${message.role} message...`}
         className="min-h-[80px] resize-none font-mono text-sm"
       />
     </div>
@@ -171,7 +171,11 @@ export default function JSONLChatEditor() {
       blocks: [
         {
           id: generateId(),
-          messages: [{ role: "user", content: "" }],
+          messages: [
+            { role: "system", content: "" },
+            { role: "user", content: "" },
+            { role: "assistant", content: "" },
+          ],
         },
       ],
       hasUnsavedChanges: false,
@@ -307,7 +311,11 @@ export default function JSONLChatEditor() {
   const addNewBlock = useCallback(() => {
     const newBlock: ChatBlock = {
       id: generateId(),
-      messages: [{ role: "user", content: "" }],
+      messages: [
+        { role: "system", content: "" },
+        { role: "user", content: "" },
+        { role: "assistant", content: "" },
+      ],
     }
     updateActiveTab((tab) => ({
       ...tab,
@@ -540,13 +548,14 @@ export default function JSONLChatEditor() {
 
   // Download file
   const downloadFile = useCallback(
-    (format: "jsonl" | "messages" = "jsonl") => {
-      if (!activeTab) return
+    (format: "jsonl" | "messages" = "jsonl", customTab?: FileTab) => {
+      const tab = customTab || activeTab
+      if (!tab) return
 
       try {
         // Collect all messages
         const allMessages: ChatMessage[] = []
-        activeTab.blocks.forEach((block) => {
+        tab.blocks.forEach((block) => {
           block.messages.forEach((message) => {
             if (message.content.trim() !== "") {
               allMessages.push(message)
@@ -572,11 +581,11 @@ export default function JSONLChatEditor() {
             messages: allMessages,
           }
           content = JSON.stringify(messagesObj, null, 2)
-          filename = activeTab.name.replace(".jsonl", ".json") || "chat.json"
+          filename = tab.name.replace(".jsonl", ".json") || "chat.json"
         } else {
           // JSONL format
           content = allMessages.map((msg) => JSON.stringify(msg)).join("\n")
-          filename = activeTab.name || "chat.jsonl"
+          filename = tab.name || "chat.jsonl"
         }
 
         const blob = new Blob([content], { type: "application/json" })
@@ -738,13 +747,8 @@ export default function JSONLChatEditor() {
               </div>
             )}
 
-            <Button onClick={() => downloadFile("messages")} variant="outline" size="sm">
-              <Save className="w-4 h-4 mr-2" />
-              JSON
-            </Button>
-
-            <Button onClick={() => downloadFile("jsonl")} variant="default" size="sm">
-              <Download className="w-4 h-4 mr-2" />
+            <Button onClick={() => downloadFile("jsonl")} variant="default" size="sm" className="bg-green-600 hover:bg-green-700 text-white flex items-center gap-2">
+              <Download className="w-4 h-4" />
               JSONL
             </Button>
 
@@ -846,6 +850,16 @@ export default function JSONLChatEditor() {
                   <div className="text-sm text-orange-500 flex items-center gap-2 mt-1">
                     <AlertTriangle className="w-4 h-4" />
                     <span>Unsaved changes</span>
+                    <button
+                      className="ml-2 px-3 py-1 bg-green-600 hover:bg-green-700 text-white rounded flex items-center gap-1 text-xs font-semibold shadow"
+                      onClick={() => {
+                        downloadFile("jsonl", tab)
+                        setFileTabs((prev) => prev.map(t => t.id === tab.id ? { ...t, hasUnsavedChanges: false } : t))
+                      }}
+                      title="Save changes"
+                    >
+                      <Download className="w-4 h-4" /> Save
+                    </button>
                   </div>
                 )}
               </div>
