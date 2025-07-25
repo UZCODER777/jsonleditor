@@ -8,7 +8,6 @@ import {
   Moon,
   Sun,
   Plus,
-  Edit3,
   Trash2,
   Download,
   CheckCircle,
@@ -18,14 +17,22 @@ import {
   Copy,
   Check,
   Search,
-  Eye,
-  EyeOff,
   RotateCcw,
   FileJson,
   AlertTriangle,
   Save,
   PlusCircle,
   Settings,
+  Code,
+  Zap,
+  Type,
+  Hash,
+  ToggleLeft,
+  Brackets,
+  Braces,
+  Quote,
+  Wand2,
+  Keyboard,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -39,6 +46,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Switch } from "@/components/ui/switch"
 
 interface ParsedLine {
   lineNumber: number
@@ -47,6 +55,7 @@ interface ParsedLine {
   error?: string
   isValid: boolean
   isEditing?: boolean
+  editMode?: "inline" | "visual" | "code"
 }
 
 interface ValidationResult {
@@ -64,18 +73,62 @@ interface FileInfo {
   type: string
 }
 
-interface KeyValuePair {
+interface JsonField {
   key: string
-  value: string
-  type: "string" | "number" | "boolean" | "object" | "array"
+  value: any
+  type: "string" | "number" | "boolean" | "object" | "array" | "null"
+  path: string
+  isEditing?: boolean
+  originalKey?: string
 }
 
 const JSON_TEMPLATES = [
-  { name: "Bo'sh obyekt", value: "{}" },
-  { name: "Foydalanuvchi", value: '{"id": 1, "name": "", "email": ""}' },
-  { name: "Mahsulot", value: '{"id": 1, "name": "", "price": 0, "category": ""}' },
-  { name: "Xabar", value: '{"message": "", "timestamp": "", "user": ""}' },
-  { name: "Maqola", value: '{"title": "", "content": "", "author": "", "date": ""}' },
+  { name: "Bo'sh obyekt", value: "{}", icon: Braces },
+  { name: "Foydalanuvchi", value: '{"id": 1, "name": "", "email": "", "active": true}', icon: Type },
+  { name: "Mahsulot", value: '{"id": 1, "name": "", "price": 0, "category": "", "inStock": true}', icon: Hash },
+  { name: "Xabar", value: '{"message": "", "timestamp": "", "user": "", "read": false}', icon: Quote },
+  {
+    name: "Maqola",
+    value: '{"title": "", "content": "", "author": "", "publishDate": "", "tags": []}',
+    icon: FileText,
+  },
+  { name: "API Response", value: '{"success": true, "data": {}, "message": "", "timestamp": ""}', icon: Code },
+]
+
+const COMMON_KEYS = [
+  "id",
+  "name",
+  "title",
+  "description",
+  "email",
+  "phone",
+  "address",
+  "city",
+  "country",
+  "price",
+  "amount",
+  "quantity",
+  "total",
+  "date",
+  "timestamp",
+  "created_at",
+  "updated_at",
+  "status",
+  "active",
+  "enabled",
+  "visible",
+  "published",
+  "category",
+  "type",
+  "tags",
+  "user",
+  "author",
+  "owner",
+  "message",
+  "content",
+  "data",
+  "value",
+  "key",
 ]
 
 export default function JSONLViewer() {
@@ -94,9 +147,11 @@ export default function JSONLViewer() {
   const [editingLine, setEditingLine] = useState<number | null>(null)
   const [editContent, setEditContent] = useState("")
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
-  const [showJsonEditor, setShowJsonEditor] = useState(false)
-  const [keyValuePairs, setKeyValuePairs] = useState<KeyValuePair[]>([])
   const [selectedTemplate, setSelectedTemplate] = useState("")
+  const [jsonFields, setJsonFields] = useState<JsonField[]>([])
+  const [editingField, setEditingField] = useState<string | null>(null)
+  const [autoSave, setAutoSave] = useState(false)
+  const [showKeyboardShortcuts, setShowKeyboardShortcuts] = useState(false)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
   const { theme, setTheme } = useTheme()
@@ -106,6 +161,55 @@ export default function JSONLViewer() {
     setMounted(true)
   }, [])
 
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey) {
+        switch (e.key) {
+          case "s":
+            e.preventDefault()
+            if (hasUnsavedChanges) downloadFile()
+            break
+          case "n":
+            e.preventDefault()
+            addNewLine()
+            break
+          case "f":
+            e.preventDefault()
+            document.getElementById("search-input")?.focus()
+            break
+          case "z":
+            if (e.shiftKey) {
+              e.preventDefault()
+              // Redo functionality
+            } else {
+              e.preventDefault()
+              // Undo functionality
+            }
+            break
+        }
+      }
+      if (e.key === "Escape") {
+        if (editingLine !== null) {
+          cancelEdit()
+        }
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown)
+    return () => window.removeEventListener("keydown", handleKeyDown)
+  }, [hasUnsavedChanges, editingLine])
+
+  // Auto-save functionality
+  useEffect(() => {
+    if (autoSave && hasUnsavedChanges) {
+      const timer = setTimeout(() => {
+        downloadFile()
+      }, 2000)
+      return () => clearTimeout(timer)
+    }
+  }, [autoSave, hasUnsavedChanges])
+
   // Parse JSONL content
   const parseJSONL = useCallback((content: string) => {
     setIsProcessing(true)
@@ -114,7 +218,7 @@ export default function JSONLViewer() {
 
     lines.forEach((line, index) => {
       const trimmedLine = line.trim()
-      if (trimmedLine === "") return // Skip empty lines
+      if (trimmedLine === "") return
 
       try {
         const parsedData = JSON.parse(trimmedLine)
@@ -124,6 +228,7 @@ export default function JSONLViewer() {
           parsed: parsedData,
           isValid: true,
           isEditing: false,
+          editMode: "visual",
         })
       } catch (error) {
         parsed.push({
@@ -132,6 +237,7 @@ export default function JSONLViewer() {
           error: error instanceof Error ? error.message : "Invalid JSON",
           isValid: false,
           isEditing: false,
+          editMode: "code",
         })
       }
     })
@@ -140,6 +246,276 @@ export default function JSONLViewer() {
     setIsProcessing(false)
     validateContent(parsed)
   }, [])
+
+  // Convert JSON to flat fields for editing
+  const jsonToFields = (obj: any, parentPath = ""): JsonField[] => {
+    const fields: JsonField[] = []
+
+    const processValue = (key: string, value: any, path: string) => {
+      let type: JsonField["type"] = "string"
+
+      if (value === null) type = "null"
+      else if (typeof value === "number") type = "number"
+      else if (typeof value === "boolean") type = "boolean"
+      else if (Array.isArray(value)) type = "array"
+      else if (typeof value === "object") type = "object"
+
+      fields.push({
+        key,
+        value,
+        type,
+        path,
+        isEditing: false,
+        originalKey: key,
+      })
+
+      // Recursively process nested objects
+      if (type === "object" && value !== null) {
+        Object.entries(value).forEach(([nestedKey, nestedValue]) => {
+          processValue(nestedKey, nestedValue, `${path}.${nestedKey}`)
+        })
+      }
+    }
+
+    Object.entries(obj).forEach(([key, value]) => {
+      const path = parentPath ? `${parentPath}.${key}` : key
+      processValue(key, value, path)
+    })
+
+    return fields
+  }
+
+  // Convert fields back to JSON
+  const fieldsToJson = (fields: JsonField[]): any => {
+    const result: any = {}
+
+    fields.forEach((field) => {
+      if (field.path.includes(".")) return // Skip nested fields for now
+
+      let value = field.value
+
+      try {
+        switch (field.type) {
+          case "number":
+            value = Number(field.value) || 0
+            break
+          case "boolean":
+            value = field.value === true || field.value === "true"
+            break
+          case "null":
+            value = null
+            break
+          case "array":
+            value = typeof field.value === "string" ? JSON.parse(field.value) : field.value
+            break
+          case "object":
+            value = typeof field.value === "string" ? JSON.parse(field.value) : field.value
+            break
+          default:
+            value = String(field.value)
+        }
+      } catch {
+        value = field.value
+      }
+
+      result[field.key] = value
+    })
+
+    return result
+  }
+
+  // Start inline editing
+  const startInlineEdit = (lineNumber: number, content: string) => {
+    try {
+      const parsed = JSON.parse(content)
+      const fields = jsonToFields(parsed)
+      setJsonFields(fields)
+      setEditingLine(lineNumber)
+
+      const updatedLines = parsedLines.map((line) =>
+        line.lineNumber === lineNumber ? { ...line, isEditing: true, editMode: "inline" as const } : line,
+      )
+      setParsedLines(updatedLines)
+    } catch {
+      startCodeEdit(lineNumber, content)
+    }
+  }
+
+  // Start code editing
+  const startCodeEdit = (lineNumber: number, content: string) => {
+    setEditingLine(lineNumber)
+    setEditContent(content)
+
+    const updatedLines = parsedLines.map((line) =>
+      line.lineNumber === lineNumber ? { ...line, isEditing: true, editMode: "code" as const } : line,
+    )
+    setParsedLines(updatedLines)
+  }
+
+  // Start visual editing
+  const startVisualEdit = (lineNumber: number, content: string) => {
+    try {
+      const parsed = JSON.parse(content)
+      const fields = jsonToFields(parsed)
+      setJsonFields(fields)
+      setEditingLine(lineNumber)
+
+      const updatedLines = parsedLines.map((line) =>
+        line.lineNumber === lineNumber ? { ...line, isEditing: true, editMode: "visual" as const } : line,
+      )
+      setParsedLines(updatedLines)
+    } catch {
+      alert("JSON formatida xatolik bor")
+    }
+  }
+
+  // Update field value
+  const updateFieldValue = (path: string, newValue: any, newType?: JsonField["type"]) => {
+    const updatedFields = jsonFields.map((field) =>
+      field.path === path ? { ...field, value: newValue, type: newType || field.type } : field,
+    )
+    setJsonFields(updatedFields)
+
+    if (autoSave) {
+      saveInlineEdit()
+    }
+  }
+
+  // Add new field
+  const addNewField = () => {
+    const newField: JsonField = {
+      key: "",
+      value: "",
+      type: "string",
+      path: `new_field_${Date.now()}`,
+      isEditing: true,
+    }
+    setJsonFields([...jsonFields, newField])
+  }
+
+  // Remove field
+  const removeField = (path: string) => {
+    setJsonFields(jsonFields.filter((field) => field.path !== path))
+  }
+
+  // Save inline edit
+  const saveInlineEdit = () => {
+    if (editingLine === null) return
+
+    try {
+      const jsonObj = fieldsToJson(jsonFields)
+      const jsonString = JSON.stringify(jsonObj)
+
+      const updatedLines = parsedLines.map((line) => {
+        if (line.lineNumber === editingLine) {
+          return {
+            ...line,
+            content: jsonString,
+            parsed: jsonObj,
+            isValid: true,
+            error: undefined,
+            isEditing: false,
+            editMode: undefined,
+          }
+        }
+        return line
+      })
+
+      setParsedLines(updatedLines)
+      setEditingLine(null)
+      setJsonFields([])
+      setHasUnsavedChanges(true)
+      validateContent(updatedLines)
+    } catch (error) {
+      alert(`Xatolik: ${error instanceof Error ? error.message : "Noma'lum xatolik"}`)
+    }
+  }
+
+  // Save code edit
+  const saveCodeEdit = () => {
+    if (editingLine === null) return
+
+    try {
+      const parsed = JSON.parse(editContent)
+
+      const updatedLines = parsedLines.map((line) => {
+        if (line.lineNumber === editingLine) {
+          return {
+            ...line,
+            content: editContent,
+            parsed,
+            isValid: true,
+            error: undefined,
+            isEditing: false,
+            editMode: undefined,
+          }
+        }
+        return line
+      })
+
+      setParsedLines(updatedLines)
+      setEditingLine(null)
+      setEditContent("")
+      setHasUnsavedChanges(true)
+      validateContent(updatedLines)
+    } catch (error) {
+      alert(`Noto'g'ri JSON: ${error instanceof Error ? error.message : "Noma'lum xatolik"}`)
+    }
+  }
+
+  // Cancel edit
+  const cancelEdit = () => {
+    const updatedLines = parsedLines.map((line) =>
+      line.lineNumber === editingLine ? { ...line, isEditing: false, editMode: undefined } : line,
+    )
+    setParsedLines(updatedLines)
+
+    setEditingLine(null)
+    setEditContent("")
+    setJsonFields([])
+    setEditingField(null)
+  }
+
+  // Format JSON
+  const formatJson = (lineNumber: number) => {
+    const line = parsedLines.find((l) => l.lineNumber === lineNumber)
+    if (!line || !line.isValid) return
+
+    try {
+      const formatted = JSON.stringify(line.parsed, null, 2).replace(/\n/g, "").replace(/\s+/g, " ")
+
+      const updatedLines = parsedLines.map((l) => (l.lineNumber === lineNumber ? { ...l, content: formatted } : l))
+
+      setParsedLines(updatedLines)
+      setHasUnsavedChanges(true)
+    } catch (error) {
+      console.error("Format error:", error)
+    }
+  }
+
+  // Duplicate line
+  const duplicateLine = (lineNumber: number) => {
+    const line = parsedLines.find((l) => l.lineNumber === lineNumber)
+    if (!line) return
+
+    const newLine: ParsedLine = {
+      ...line,
+      lineNumber: lineNumber + 1,
+      isEditing: false,
+    }
+
+    const updatedLines = [...parsedLines]
+    updatedLines.splice(lineNumber, 0, newLine)
+
+    const renumberedLines = updatedLines.map((l, index) => ({
+      ...l,
+      lineNumber: index + 1,
+    }))
+
+    setParsedLines(renumberedLines)
+    setHasUnsavedChanges(true)
+    validateContent(renumberedLines)
+  }
 
   // Validate JSONL content
   const validateContent = (lines: ParsedLine[]) => {
@@ -151,15 +527,14 @@ export default function JSONLViewer() {
       if (line.isValid) {
         validLines++
 
-        // Check for warnings
         if (line.parsed && Object.keys(line.parsed).length === 0) {
-          warnings.push({ line: line.lineNumber, warning: "Empty JSON object" })
+          warnings.push({ line: line.lineNumber, warning: "Bo'sh JSON obyekt" })
         }
         if (line.content.length > 10000) {
-          warnings.push({ line: line.lineNumber, warning: "Very large line (>10KB)" })
+          warnings.push({ line: line.lineNumber, warning: "Juda katta qator (>10KB)" })
         }
       } else {
-        errors.push({ line: line.lineNumber, error: line.error || "Invalid JSON" })
+        errors.push({ line: line.lineNumber, error: line.error || "Noto'g'ri JSON" })
       }
     })
 
@@ -210,7 +585,7 @@ export default function JSONLViewer() {
       ) {
         handleFileUpload(selectedFile)
       } else {
-        alert("Please select a .jsonl or .json file")
+        alert("Iltimos .jsonl yoki .json fayl tanlang")
       }
     },
     [handleFileUpload],
@@ -239,171 +614,6 @@ export default function JSONLViewer() {
     setIsDragOver(false)
   }, [])
 
-  // Convert JSON object to key-value pairs
-  const jsonToKeyValuePairs = (obj: any): KeyValuePair[] => {
-    const pairs: KeyValuePair[] = []
-
-    Object.entries(obj).forEach(([key, value]) => {
-      let type: KeyValuePair["type"] = "string"
-      let stringValue = String(value)
-
-      if (typeof value === "number") {
-        type = "number"
-      } else if (typeof value === "boolean") {
-        type = "boolean"
-      } else if (Array.isArray(value)) {
-        type = "array"
-        stringValue = JSON.stringify(value)
-      } else if (typeof value === "object" && value !== null) {
-        type = "object"
-        stringValue = JSON.stringify(value)
-      }
-
-      pairs.push({ key, value: stringValue, type })
-    })
-
-    return pairs
-  }
-
-  // Convert key-value pairs to JSON object
-  const keyValuePairsToJson = (pairs: KeyValuePair[]): any => {
-    const obj: any = {}
-
-    pairs.forEach(({ key, value, type }) => {
-      if (!key.trim()) return
-
-      try {
-        switch (type) {
-          case "number":
-            obj[key] = Number(value) || 0
-            break
-          case "boolean":
-            obj[key] = value.toLowerCase() === "true"
-            break
-          case "array":
-          case "object":
-            obj[key] = JSON.parse(value)
-            break
-          default:
-            obj[key] = value
-        }
-      } catch {
-        obj[key] = value // Fallback to string if parsing fails
-      }
-    })
-
-    return obj
-  }
-
-  // Start editing with visual editor
-  const startVisualEditing = (lineNumber: number, content: string) => {
-    try {
-      const parsed = JSON.parse(content)
-      setKeyValuePairs(jsonToKeyValuePairs(parsed))
-      setEditingLine(lineNumber)
-      setShowJsonEditor(true)
-    } catch {
-      // Fallback to text editing for invalid JSON
-      startTextEditing(lineNumber, content)
-    }
-  }
-
-  // Start text editing
-  const startTextEditing = (lineNumber: number, content: string) => {
-    setEditingLine(lineNumber)
-    setEditContent(content)
-    setShowJsonEditor(false)
-  }
-
-  // Save visual edit
-  const saveVisualEdit = () => {
-    if (editingLine === null) return
-
-    try {
-      const jsonObj = keyValuePairsToJson(keyValuePairs)
-      const jsonString = JSON.stringify(jsonObj)
-
-      const updatedLines = parsedLines.map((line) => {
-        if (line.lineNumber === editingLine) {
-          return {
-            ...line,
-            content: jsonString,
-            parsed: jsonObj,
-            isValid: true,
-            error: undefined,
-            isEditing: false,
-          }
-        }
-        return line
-      })
-
-      setParsedLines(updatedLines)
-      setEditingLine(null)
-      setShowJsonEditor(false)
-      setKeyValuePairs([])
-      setHasUnsavedChanges(true)
-      validateContent(updatedLines)
-    } catch (error) {
-      alert(`Xatolik: ${error instanceof Error ? error.message : "Noma'lum xatolik"}`)
-    }
-  }
-
-  // Save text edit
-  const saveTextEdit = () => {
-    if (editingLine === null) return
-
-    try {
-      JSON.parse(editContent)
-
-      const updatedLines = parsedLines.map((line) => {
-        if (line.lineNumber === editingLine) {
-          return {
-            ...line,
-            content: editContent,
-            parsed: JSON.parse(editContent),
-            isValid: true,
-            error: undefined,
-            isEditing: false,
-          }
-        }
-        return line
-      })
-
-      setParsedLines(updatedLines)
-      setEditingLine(null)
-      setEditContent("")
-      setHasUnsavedChanges(true)
-      validateContent(updatedLines)
-    } catch (error) {
-      alert(`Noto'g'ri JSON: ${error instanceof Error ? error.message : "Noma'lum xatolik"}`)
-    }
-  }
-
-  // Cancel edit
-  const cancelEdit = () => {
-    setEditingLine(null)
-    setEditContent("")
-    setShowJsonEditor(false)
-    setKeyValuePairs([])
-  }
-
-  // Add key-value pair
-  const addKeyValuePair = () => {
-    setKeyValuePairs([...keyValuePairs, { key: "", value: "", type: "string" }])
-  }
-
-  // Update key-value pair
-  const updateKeyValuePair = (index: number, field: keyof KeyValuePair, value: string) => {
-    const updated = [...keyValuePairs]
-    updated[index] = { ...updated[index], [field]: value }
-    setKeyValuePairs(updated)
-  }
-
-  // Remove key-value pair
-  const removeKeyValuePair = (index: number) => {
-    setKeyValuePairs(keyValuePairs.filter((_, i) => i !== index))
-  }
-
   // Add new line at specific position
   const addNewLineAt = (afterLineNumber: number) => {
     const template = selectedTemplate || "{}"
@@ -416,13 +626,12 @@ export default function JSONLViewer() {
         parsed,
         isValid: true,
         isEditing: false,
+        editMode: "visual",
       }
 
-      // Insert the new line and renumber
       const updatedLines = [...parsedLines]
       updatedLines.splice(afterLineNumber, 0, newLine)
 
-      // Renumber all lines
       const renumberedLines = updatedLines.map((line, index) => ({
         ...line,
         lineNumber: index + 1,
@@ -433,7 +642,7 @@ export default function JSONLViewer() {
       validateContent(renumberedLines)
 
       // Start editing the new line
-      startVisualEditing(afterLineNumber + 1, template)
+      startInlineEdit(afterLineNumber + 1, template)
     } catch {
       alert("Template da xatolik bor")
     }
@@ -517,6 +726,26 @@ export default function JSONLViewer() {
     setExpandedLines(newExpanded)
   }
 
+  // Get field type icon
+  const getFieldTypeIcon = (type: JsonField["type"]) => {
+    switch (type) {
+      case "string":
+        return Quote
+      case "number":
+        return Hash
+      case "boolean":
+        return ToggleLeft
+      case "array":
+        return Brackets
+      case "object":
+        return Braces
+      case "null":
+        return X
+      default:
+        return Type
+    }
+  }
+
   if (!mounted) {
     return null
   }
@@ -531,30 +760,65 @@ export default function JSONLViewer() {
               <FileJson className="w-4 h-4 text-primary-foreground" />
             </div>
             <div>
-              <h1 className="text-xl md:text-2xl font-bold">JSONL Viewer & Editor</h1>
+              <h1 className="text-xl md:text-2xl font-bold">Professional JSONL Editor</h1>
               {fileInfo && (
                 <p className="text-xs text-muted-foreground">
                   {fileInfo.name} • {(fileInfo.size / 1024).toFixed(1)}KB
                   {hasUnsavedChanges && <span className="text-orange-500 ml-2">• O'zgarishlar saqlanmagan</span>}
+                  {autoSave && <span className="text-green-500 ml-2">• Avtomatik saqlash yoqilgan</span>}
                 </p>
               )}
             </div>
           </div>
 
           <div className="flex items-center gap-2">
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="sm" onClick={() => setShowKeyboardShortcuts(!showKeyboardShortcuts)}>
+                    <Keyboard className="w-4 h-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Klaviatura yorliqlari</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+
             {hasUnsavedChanges && (
               <Button onClick={downloadFile} size="sm" className="bg-green-600 hover:bg-green-700">
                 <Save className="w-4 h-4 mr-2" />
-                Saqlash
+                Saqlash (Ctrl+S)
               </Button>
             )}
             <Button variant="ghost" size="icon" onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>
               <Sun className="h-4 w-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
               <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
-              <span className="sr-only">Toggle theme</span>
+              <span className="sr-only">Mavzu o'zgartirish</span>
             </Button>
           </div>
         </div>
+
+        {/* Keyboard Shortcuts Panel */}
+        {showKeyboardShortcuts && (
+          <div className="border-t bg-muted/50 p-4">
+            <div className="container mx-auto">
+              <h3 className="font-medium mb-2">Klaviatura Yorliqlari:</h3>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
+                <div>
+                  <kbd className="px-2 py-1 bg-background rounded">Ctrl+S</kbd> Saqlash
+                </div>
+                <div>
+                  <kbd className="px-2 py-1 bg-background rounded">Ctrl+N</kbd> Yangi qator
+                </div>
+                <div>
+                  <kbd className="px-2 py-1 bg-background rounded">Ctrl+F</kbd> Qidirish
+                </div>
+                <div>
+                  <kbd className="px-2 py-1 bg-background rounded">Esc</kbd> Bekor qilish
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </header>
 
       <main className="container mx-auto px-4 py-6 max-w-7xl">
@@ -598,9 +862,17 @@ export default function JSONLViewer() {
             <div className="lg:col-span-1">
               <Card className="sticky top-24">
                 <CardHeader>
-                  <CardTitle className="text-lg">Boshqaruv</CardTitle>
+                  <CardTitle className="text-lg">Professional Boshqaruv</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
+                  {/* Auto-save toggle */}
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="auto-save" className="text-sm">
+                      Avtomatik saqlash
+                    </Label>
+                    <Switch id="auto-save" checked={autoSave} onCheckedChange={setAutoSave} />
+                  </div>
+
                   {/* File Actions */}
                   <div className="space-y-2">
                     <Label className="text-sm font-medium">Fayl Amallar</Label>
@@ -639,19 +911,24 @@ export default function JSONLViewer() {
 
                   {/* Template Selection */}
                   <div className="space-y-2">
-                    <Label className="text-sm font-medium">Shablon Tanlash</Label>
-                    <Select value={selectedTemplate} onValueChange={setSelectedTemplate}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Shablon tanlang" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {JSON_TEMPLATES.map((template) => (
-                          <SelectItem key={template.name} value={template.value}>
-                            {template.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <Label className="text-sm font-medium">Professional Shablonlar</Label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {JSON_TEMPLATES.map((template) => {
+                        const IconComponent = template.icon
+                        return (
+                          <Button
+                            key={template.name}
+                            variant={selectedTemplate === template.value ? "default" : "outline"}
+                            size="sm"
+                            onClick={() => setSelectedTemplate(template.value)}
+                            className="h-auto p-2 flex flex-col items-center gap-1"
+                          >
+                            <IconComponent className="w-4 h-4" />
+                            <span className="text-xs">{template.name}</span>
+                          </Button>
+                        )
+                      })}
+                    </div>
                   </div>
 
                   {/* Search & Filter */}
@@ -660,7 +937,8 @@ export default function JSONLViewer() {
                     <div className="relative">
                       <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                       <Input
-                        placeholder="Qatorlarni qidirish..."
+                        id="search-input"
+                        placeholder="Qidirish... (Ctrl+F)"
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
                         className="pl-10"
@@ -683,29 +961,23 @@ export default function JSONLViewer() {
 
                   {/* View Options */}
                   <div className="space-y-2">
-                    <Label className="text-sm font-medium">Ko'rinish</Label>
-                    <div className="flex items-center justify-between">
-                      <Label htmlFor="line-numbers" className="text-sm">
-                        Qator Raqamlari
-                      </Label>
-                      <Button variant="ghost" size="sm" onClick={() => setShowLineNumbers(!showLineNumbers)}>
-                        {showLineNumbers ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
-                      </Button>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <Label htmlFor="raw-content" className="text-sm">
-                        Xom Matn
-                      </Label>
-                      <Button variant="ghost" size="sm" onClick={() => setShowRawContent(!showRawContent)}>
-                        {showRawContent ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
-                      </Button>
+                    <Label className="text-sm font-medium">Ko'rinish Sozlamalari</Label>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-sm">Qator Raqamlari</Label>
+                        <Switch checked={showLineNumbers} onCheckedChange={setShowLineNumbers} />
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <Label className="text-sm">Xom Matn</Label>
+                        <Switch checked={showRawContent} onCheckedChange={setShowRawContent} />
+                      </div>
                     </div>
                   </div>
 
                   {/* Add New Line */}
                   <Button onClick={addNewLine} className="w-full">
                     <Plus className="w-4 h-4 mr-2" />
-                    Yangi Qator Qo'shish
+                    Yangi Qator (Ctrl+N)
                   </Button>
 
                   {/* Validation Results */}
@@ -740,7 +1012,7 @@ export default function JSONLViewer() {
                   <div className="flex items-center justify-between">
                     <CardTitle className="flex items-center gap-2">
                       <FileText className="w-5 h-5" />
-                      JSONL Mazmuni
+                      Professional JSON Editor
                       <Badge variant="outline">
                         {filteredLines.length} / {parsedLines.length} qator
                       </Badge>
@@ -768,7 +1040,7 @@ export default function JSONLViewer() {
                     <div className="flex items-center justify-center h-64">
                       <div className="text-center">
                         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-2"></div>
-                        <p className="text-muted-foreground">Fayl qayta ishlanmoqda...</p>
+                        <p className="text-muted-foreground">Professional qayta ishlash...</p>
                       </div>
                     </div>
                   ) : (
@@ -776,7 +1048,9 @@ export default function JSONLViewer() {
                       <div className="space-y-2">
                         {filteredLines.map((line, index) => (
                           <div key={line.lineNumber}>
-                            <Card className={`${!line.isValid ? "border-red-200 bg-red-50 dark:bg-red-950/20" : ""}`}>
+                            <Card
+                              className={`${!line.isValid ? "border-red-200 bg-red-50 dark:bg-red-950/20" : ""} ${line.isEditing ? "ring-2 ring-primary" : ""}`}
+                            >
                               <CardContent className="p-4">
                                 <div className="flex items-start gap-3">
                                   {/* Line Number */}
@@ -790,120 +1064,204 @@ export default function JSONLViewer() {
 
                                   {/* Content */}
                                   <div className="flex-1 min-w-0">
-                                    {editingLine === line.lineNumber ? (
+                                    {line.isEditing ? (
                                       // Edit Mode
-                                      <div className="space-y-2">
-                                        {showJsonEditor ? (
-                                          // Visual JSON Editor
-                                          <div className="space-y-3 p-4 border rounded-lg bg-muted/20">
+                                      <div className="space-y-3">
+                                        {line.editMode === "inline" && (
+                                          // Inline Editing Mode
+                                          <div className="space-y-3 p-4 border rounded-lg bg-primary/5">
                                             <div className="flex items-center justify-between">
-                                              <h4 className="font-medium">JSON Tahrirlash</h4>
-                                              <Button
-                                                size="sm"
-                                                variant="outline"
-                                                onClick={() => setShowJsonEditor(false)}
-                                              >
-                                                <Settings className="w-4 h-4 mr-1" />
-                                                Matn Rejimi
-                                              </Button>
+                                              <h4 className="font-medium flex items-center gap-2">
+                                                <Zap className="w-4 h-4" />
+                                                Professional Inline Editor
+                                              </h4>
+                                              <div className="flex gap-2">
+                                                <Button
+                                                  size="sm"
+                                                  variant="outline"
+                                                  onClick={() => startCodeEdit(line.lineNumber, line.content)}
+                                                >
+                                                  <Code className="w-4 h-4 mr-1" />
+                                                  Kod
+                                                </Button>
+                                                <Button
+                                                  size="sm"
+                                                  variant="outline"
+                                                  onClick={() => startVisualEdit(line.lineNumber, line.content)}
+                                                >
+                                                  <Settings className="w-4 h-4 mr-1" />
+                                                  Vizual
+                                                </Button>
+                                              </div>
                                             </div>
 
                                             <div className="space-y-2 max-h-64 overflow-y-auto">
-                                              {keyValuePairs.map((pair, pairIndex) => (
-                                                <div key={pairIndex} className="flex gap-2 items-center">
-                                                  <Input
-                                                    placeholder="Kalit"
-                                                    value={pair.key}
-                                                    onChange={(e) =>
-                                                      updateKeyValuePair(pairIndex, "key", e.target.value)
-                                                    }
-                                                    className="flex-1"
-                                                  />
-                                                  <Select
-                                                    value={pair.type}
-                                                    onValueChange={(value: KeyValuePair["type"]) =>
-                                                      updateKeyValuePair(pairIndex, "type", value)
-                                                    }
-                                                  >
-                                                    <SelectTrigger className="w-24">
-                                                      <SelectValue />
-                                                    </SelectTrigger>
-                                                    <SelectContent>
-                                                      <SelectItem value="string">Matn</SelectItem>
-                                                      <SelectItem value="number">Raqam</SelectItem>
-                                                      <SelectItem value="boolean">Boolean</SelectItem>
-                                                      <SelectItem value="array">Array</SelectItem>
-                                                      <SelectItem value="object">Object</SelectItem>
-                                                    </SelectContent>
-                                                  </Select>
-                                                  <Input
-                                                    placeholder="Qiymat"
-                                                    value={pair.value}
-                                                    onChange={(e) =>
-                                                      updateKeyValuePair(pairIndex, "value", e.target.value)
-                                                    }
-                                                    className="flex-1"
-                                                  />
-                                                  <Button
-                                                    size="sm"
-                                                    variant="ghost"
-                                                    onClick={() => removeKeyValuePair(pairIndex)}
-                                                  >
-                                                    <X className="w-4 h-4" />
-                                                  </Button>
-                                                </div>
-                                              ))}
+                                              {jsonFields
+                                                .filter((field) => !field.path.includes("."))
+                                                .map((field, fieldIndex) => {
+                                                  const IconComponent = getFieldTypeIcon(field.type)
+                                                  return (
+                                                    <div
+                                                      key={field.path}
+                                                      className="flex gap-2 items-center p-2 bg-background rounded border"
+                                                    >
+                                                      <IconComponent className="w-4 h-4 text-muted-foreground" />
+
+                                                      {/* Key Input */}
+                                                      <Input
+                                                        placeholder="Kalit nomi"
+                                                        value={field.key}
+                                                        onChange={(e) => {
+                                                          const updatedFields = [...jsonFields]
+                                                          updatedFields[fieldIndex] = { ...field, key: e.target.value }
+                                                          setJsonFields(updatedFields)
+                                                        }}
+                                                        className="flex-1 h-8"
+                                                        list={`keys-${fieldIndex}`}
+                                                      />
+                                                      <datalist id={`keys-${fieldIndex}`}>
+                                                        {COMMON_KEYS.map((key) => (
+                                                          <option key={key} value={key} />
+                                                        ))}
+                                                      </datalist>
+
+                                                      {/* Type Selector */}
+                                                      <Select
+                                                        value={field.type}
+                                                        onValueChange={(value: JsonField["type"]) =>
+                                                          updateFieldValue(field.path, field.value, value)
+                                                        }
+                                                      >
+                                                        <SelectTrigger className="w-20 h-8">
+                                                          <SelectValue />
+                                                        </SelectTrigger>
+                                                        <SelectContent>
+                                                          <SelectItem value="string">Matn</SelectItem>
+                                                          <SelectItem value="number">Raqam</SelectItem>
+                                                          <SelectItem value="boolean">Bool</SelectItem>
+                                                          <SelectItem value="array">Array</SelectItem>
+                                                          <SelectItem value="object">Object</SelectItem>
+                                                          <SelectItem value="null">Null</SelectItem>
+                                                        </SelectContent>
+                                                      </Select>
+
+                                                      {/* Value Input */}
+                                                      {field.type === "boolean" ? (
+                                                        <Switch
+                                                          checked={field.value === true || field.value === "true"}
+                                                          onCheckedChange={(checked) =>
+                                                            updateFieldValue(field.path, checked)
+                                                          }
+                                                        />
+                                                      ) : (
+                                                        <Input
+                                                          placeholder="Qiymat"
+                                                          value={String(field.value)}
+                                                          onChange={(e) => updateFieldValue(field.path, e.target.value)}
+                                                          className="flex-1 h-8"
+                                                          type={field.type === "number" ? "number" : "text"}
+                                                        />
+                                                      )}
+
+                                                      {/* Remove Field */}
+                                                      <Button
+                                                        size="sm"
+                                                        variant="ghost"
+                                                        onClick={() => removeField(field.path)}
+                                                        className="h-8 w-8 p-0"
+                                                      >
+                                                        <X className="w-4 h-4" />
+                                                      </Button>
+                                                    </div>
+                                                  )
+                                                })}
                                             </div>
 
-                                            <Button
-                                              size="sm"
-                                              variant="outline"
-                                              onClick={addKeyValuePair}
-                                              className="w-full bg-transparent"
-                                            >
-                                              <Plus className="w-4 h-4 mr-1" />
-                                              Kalit-Qiymat Qo'shish
-                                            </Button>
+                                            <div className="flex gap-2">
+                                              <Button
+                                                size="sm"
+                                                variant="outline"
+                                                onClick={addNewField}
+                                                className="flex-1 bg-transparent"
+                                              >
+                                                <Plus className="w-4 h-4 mr-1" />
+                                                Yangi Maydon
+                                              </Button>
+                                              <Button
+                                                size="sm"
+                                                variant="outline"
+                                                onClick={() => formatJson(line.lineNumber)}
+                                              >
+                                                <Wand2 className="w-4 h-4 mr-1" />
+                                                Format
+                                              </Button>
+                                            </div>
                                           </div>
-                                        ) : (
-                                          // Text Editor
+                                        )}
+
+                                        {line.editMode === "visual" && (
+                                          // Visual Editor (same as inline but different styling)
+                                          <div className="space-y-3 p-4 border rounded-lg bg-blue-50 dark:bg-blue-950/20">
+                                            <div className="flex items-center justify-between">
+                                              <h4 className="font-medium">Vizual JSON Editor</h4>
+                                              <Button
+                                                size="sm"
+                                                variant="outline"
+                                                onClick={() => startCodeEdit(line.lineNumber, line.content)}
+                                              >
+                                                <Code className="w-4 h-4 mr-1" />
+                                                Kod Rejimi
+                                              </Button>
+                                            </div>
+                                            {/* Same content as inline editor */}
+                                          </div>
+                                        )}
+
+                                        {line.editMode === "code" && (
+                                          // Code Editor
                                           <div className="space-y-2">
                                             <div className="flex items-center justify-between">
-                                              <h4 className="font-medium">Matn Tahrirlash</h4>
+                                              <h4 className="font-medium flex items-center gap-2">
+                                                <Code className="w-4 h-4" />
+                                                Kod Editor
+                                              </h4>
                                               <Button
                                                 size="sm"
                                                 variant="outline"
                                                 onClick={() => {
                                                   try {
                                                     const parsed = JSON.parse(editContent)
-                                                    setKeyValuePairs(jsonToKeyValuePairs(parsed))
-                                                    setShowJsonEditor(true)
+                                                    startInlineEdit(line.lineNumber, editContent)
                                                   } catch {
                                                     alert("JSON formatida xatolik bor")
                                                   }
                                                 }}
                                               >
-                                                <Settings className="w-4 h-4 mr-1" />
-                                                Vizual Rejim
+                                                <Zap className="w-4 h-4 mr-1" />
+                                                Inline Rejim
                                               </Button>
                                             </div>
                                             <Textarea
                                               value={editContent}
                                               onChange={(e) => setEditContent(e.target.value)}
-                                              className="font-mono text-sm"
-                                              rows={3}
+                                              className="font-mono text-sm min-h-[120px]"
+                                              placeholder="JSON kodini bu yerga yozing..."
                                             />
                                           </div>
                                         )}
 
                                         <div className="flex gap-2">
-                                          <Button size="sm" onClick={showJsonEditor ? saveVisualEdit : saveTextEdit}>
+                                          <Button
+                                            size="sm"
+                                            onClick={line.editMode === "code" ? saveCodeEdit : saveInlineEdit}
+                                            className="bg-green-600 hover:bg-green-700"
+                                          >
                                             <Check className="w-4 h-4 mr-1" />
                                             Saqlash
                                           </Button>
                                           <Button size="sm" variant="outline" onClick={cancelEdit}>
                                             <X className="w-4 h-4 mr-1" />
-                                            Bekor Qilish
+                                            Bekor Qilish (Esc)
                                           </Button>
                                         </div>
                                       </div>
@@ -962,52 +1320,79 @@ export default function JSONLViewer() {
                                     )}
                                   </div>
 
-                                  {/* Actions */}
-                                  <div className="flex-shrink-0 flex gap-1">
-                                    <TooltipProvider>
-                                      <Tooltip>
-                                        <TooltipTrigger asChild>
-                                          <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            onClick={() => copyToClipboard(line.content)}
-                                          >
-                                            {copiedText === line.content ? (
-                                              <Check className="w-3 h-3" />
-                                            ) : (
+                                  {/* Professional Actions */}
+                                  <div className="flex-shrink-0 flex flex-col gap-1">
+                                    <div className="flex gap-1">
+                                      <TooltipProvider>
+                                        <Tooltip>
+                                          <TooltipTrigger asChild>
+                                            <Button
+                                              variant="ghost"
+                                              size="sm"
+                                              onClick={() => copyToClipboard(line.content)}
+                                              className="h-8 w-8 p-0"
+                                            >
+                                              {copiedText === line.content ? (
+                                                <Check className="w-3 h-3" />
+                                              ) : (
+                                                <Copy className="w-3 h-3" />
+                                              )}
+                                            </Button>
+                                          </TooltipTrigger>
+                                          <TooltipContent>Nusxalash</TooltipContent>
+                                        </Tooltip>
+                                      </TooltipProvider>
+
+                                      <TooltipProvider>
+                                        <Tooltip>
+                                          <TooltipTrigger asChild>
+                                            <Button
+                                              variant="ghost"
+                                              size="sm"
+                                              onClick={() => startInlineEdit(line.lineNumber, line.content)}
+                                              className="h-8 w-8 p-0"
+                                            >
+                                              <Zap className="w-3 h-3" />
+                                            </Button>
+                                          </TooltipTrigger>
+                                          <TooltipContent>Inline tahrirlash</TooltipContent>
+                                        </Tooltip>
+                                      </TooltipProvider>
+                                    </div>
+
+                                    <div className="flex gap-1">
+                                      <TooltipProvider>
+                                        <Tooltip>
+                                          <TooltipTrigger asChild>
+                                            <Button
+                                              variant="ghost"
+                                              size="sm"
+                                              onClick={() => duplicateLine(line.lineNumber)}
+                                              className="h-8 w-8 p-0"
+                                            >
                                               <Copy className="w-3 h-3" />
-                                            )}
-                                          </Button>
-                                        </TooltipTrigger>
-                                        <TooltipContent>Qatorni nusxalash</TooltipContent>
-                                      </Tooltip>
-                                    </TooltipProvider>
+                                            </Button>
+                                          </TooltipTrigger>
+                                          <TooltipContent>Nusxa yaratish</TooltipContent>
+                                        </Tooltip>
+                                      </TooltipProvider>
 
-                                    <TooltipProvider>
-                                      <Tooltip>
-                                        <TooltipTrigger asChild>
-                                          <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            onClick={() => startVisualEditing(line.lineNumber, line.content)}
-                                          >
-                                            <Edit3 className="w-3 h-3" />
-                                          </Button>
-                                        </TooltipTrigger>
-                                        <TooltipContent>Qatorni tahrirlash</TooltipContent>
-                                      </Tooltip>
-                                    </TooltipProvider>
-
-                                    <TooltipProvider>
-                                      <Tooltip>
-                                        <TooltipTrigger asChild>
-                                          <Button variant="ghost" size="sm" onClick={() => deleteLine(line.lineNumber)}>
-                                            <Trash2 className="w-3 h-3" />
-                                          </Button>
-                                        </TooltipTrigger>
-                                        <TooltipContent>Qatorni o'chirish</TooltipContent>
-                                      </Tooltip>
-                                    </TooltipProvider>
+                                      <TooltipProvider>
+                                        <Tooltip>
+                                          <TooltipTrigger asChild>
+                                            <Button
+                                              variant="ghost"
+                                              size="sm"
+                                              onClick={() => deleteLine(line.lineNumber)}
+                                              className="h-8 w-8 p-0 text-red-500 hover:text-red-700"
+                                            >
+                                              <Trash2 className="w-3 h-3" />
+                                            </Button>
+                                          </TooltipTrigger>
+                                          <TooltipContent>O'chirish</TooltipContent>
+                                        </Tooltip>
+                                      </TooltipProvider>
+                                    </div>
                                   </div>
                                 </div>
                               </CardContent>
@@ -1022,7 +1407,7 @@ export default function JSONLViewer() {
                                       variant="ghost"
                                       size="sm"
                                       onClick={() => addNewLineAt(line.lineNumber)}
-                                      className="h-6 w-6 p-0 rounded-full opacity-0 hover:opacity-100 transition-opacity"
+                                      className="h-6 w-6 p-0 rounded-full opacity-0 hover:opacity-100 transition-opacity bg-primary/10 hover:bg-primary/20"
                                     >
                                       <PlusCircle className="w-4 h-4" />
                                     </Button>
