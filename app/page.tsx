@@ -116,9 +116,9 @@ export default function JSONLChatEditor() {
         blocks: tab.blocks.map((block) =>
           block.id === blockId
             ? {
-                ...block,
-                messages: [...block.messages, { role, content: "" }],
-              }
+              ...block,
+              messages: [...block.messages, { role, content: "" }],
+            }
             : block,
         ),
         hasUnsavedChanges: true,
@@ -135,9 +135,9 @@ export default function JSONLChatEditor() {
         blocks: tab.blocks.map((block) =>
           block.id === blockId
             ? {
-                ...block,
-                messages: block.messages.filter((_, index) => index !== messageIndex),
-              }
+              ...block,
+              messages: block.messages.filter((_, index) => index !== messageIndex),
+            }
             : block,
         ),
         hasUnsavedChanges: true,
@@ -154,11 +154,11 @@ export default function JSONLChatEditor() {
         blocks: tab.blocks.map((block) =>
           block.id === blockId
             ? {
-                ...block,
-                messages: block.messages.map((message, index) =>
-                  index === messageIndex ? { ...message, content } : message,
-                ),
-              }
+              ...block,
+              messages: block.messages.map((message, index) =>
+                index === messageIndex ? { ...message, content } : message,
+              ),
+            }
             : block,
         ),
         hasUnsavedChanges: true,
@@ -175,11 +175,11 @@ export default function JSONLChatEditor() {
         blocks: tab.blocks.map((block) =>
           block.id === blockId
             ? {
-                ...block,
-                messages: block.messages.map((message, index) =>
-                  index === messageIndex ? { ...message, role } : message,
-                ),
-              }
+              ...block,
+              messages: block.messages.map((message, index) =>
+                index === messageIndex ? { ...message, role } : message,
+              ),
+            }
             : block,
         ),
         hasUnsavedChanges: true,
@@ -580,23 +580,26 @@ export default function JSONLChatEditor() {
       <main className="container mx-auto px-4 py-6">
         <Tabs value={activeTabId} onValueChange={setActiveTabId} className="w-full">
           {/* Tab Headers */}
-          <TabsList className="grid w-full grid-cols-auto gap-1 bg-white dark:bg-gray-800 p-1 rounded-lg shadow-sm border mb-6">
+          <TabsList className="flex w-full gap-2 bg-transparent mb-6 justify-start">
             {fileTabs.map((tab) => (
               <div key={tab.id} className="flex items-center">
                 <TabsTrigger
                   value={tab.id}
-                  className="flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-md data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors
+                    ${activeTabId === tab.id
+                      ? "bg-green-600 text-white shadow border border-green-700"
+                      : "hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200"}`}
                 >
                   <FileText className="w-4 h-4" />
-                  {tab.name}
-                  {tab.hasUnsavedChanges && <span className="w-2 h-2 bg-orange-500 rounded-full" />}
+                  <span className="truncate">{tab.name}</span>
+                  {tab.hasUnsavedChanges && <span className="ml-1 w-2 h-2 bg-orange-500 rounded-full" />}
                 </TabsTrigger>
                 {fileTabs.length > 1 && (
                   <Button
                     variant="ghost"
-                    size="sm"
+                    size="icon"
                     onClick={() => closeTab(tab.id)}
-                    className="ml-1 h-6 w-6 p-0 hover:bg-red-100 hover:text-red-600"
+                    className="ml-1 h-6 w-6 p-0 text-gray-400 hover:text-red-500"
                   >
                     <X className="w-3 h-3" />
                   </Button>
