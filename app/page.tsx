@@ -141,12 +141,11 @@ export default function JSONLChatEditor() {
   const { theme, setTheme } = useTheme()
   const [mounted, setMounted] = useState(false)
 
+  const generateId = () => `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+
   useEffect(() => {
     setMounted(true)
   }, [])
-
-  // Generate unique ID
-  const generateId = () => `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -190,103 +189,151 @@ export default function JSONLChatEditor() {
       const parsedMessages: ChatMessage[] = []
 
       try {
-        // Avval bitta JSON obyekt sifatida parse qilishga harakat qilamiz
-        const singleJson = JSON.parse(content.trim())
+        // Matnni tozalash
+        const trimmedContent = content.trim()
 
-        // Agar messages array mavjud bo'lsa
-        if (singleJson.messages && Array.isArray(singleJson.messages)) {
-          singleJson.messages.forEach((msg: any, index: number) => {
-            if (typeof msg === "object" && msg.role && msg.content) {
-              if (["system", "user", "assistant"].includes(msg.role)) {
-                parsedMessages.push({
-                  id: generateId(),
-                  role: msg.role,
-                  content: msg.content,
-                  isValid: true,
-                })
+        // Avval bitta JSON obyekt sifatida parse qilishga harakat qilamiz
+        try {
+          const singleJson = JSON.parse(trimmedContent)
+
+          // Agar messages array mavjud bo'lsa
+          if (singleJson && typeof singleJson === "object" && Array.isArray(singleJson.messages)) {
+            console.log("Messages array topildi:", singleJson.messages.length, "ta xabar")
+
+            singleJson.messages.forEach((msg: any, index: number) => {
+              console.log(`Xabar ${index + 1}:`, msg)
+
+              // Xabar formatini tekshirish
+              if (msg && typeof msg === "object" && msg.role && msg.content) {
+                // Role ni tekshirish
+                if (["system", "user", "assistant"].includes(msg.role)) {
+                  parsedMessages.push({
+                    id: generateId(),
+                    role: msg.role as "system" | "user" | "assistant",
+                    content: String(msg.content), // String ga o'tkazish
+                    isValid: true,
+                  })
+                  console.log(`✅ Xabar ${index + 1} muvaffaqiyatli qo'shildi`)
+                } else {
+                  console.log(`❌ Noto'g'ri role: ${msg.role}`)
+                  parsedMessages.push({
+                    id: generateId(),
+                    role: "user",
+                    content: JSON.stringify(msg),
+                    isValid: false,
+                    error: `Noto'g'ri role: ${msg.role}. Faqat system, user, assistant ruxsat etilgan.`,
+                  })
+                }
               } else {
+                console.log(`❌ Noto'g'ri xabar formati:`, msg)
                 parsedMessages.push({
                   id: generateId(),
                   role: "user",
                   content: JSON.stringify(msg),
                   isValid: false,
-                  error: `Noto'g'ri role: ${msg.role}`,
+                  error: "Xabar formatida 'role' va 'content' maydonlari bo'lishi kerak",
                 })
               }
+            })
+
+            console.log(`Jami ${parsedMessages.length} ta xabar qayta ishlandi`)
+          } else if (singleJson && typeof singleJson === "object" && singleJson.role && singleJson.content) {
+            // Bitta xabar formati
+            console.log("Bitta xabar formati aniqlandi")
+            if (["system", "user", "assistant"].includes(singleJson.role)) {
+              parsedMessages.push({
+                id: generateId(),
+                role: singleJson.role as "system" | "user" | "assistant",
+                content: String(singleJson.content),
+                isValid: true,
+              })
             } else {
               parsedMessages.push({
                 id: generateId(),
                 role: "user",
-                content: JSON.stringify(msg),
+                content: JSON.stringify(singleJson),
                 isValid: false,
-                error: "Chat format emas (role va content kerak)",
+                error: `Noto'g'ri role: ${singleJson.role}`,
               })
             }
-          })
-        } else {
-          // Agar messages array yo'q bo'lsa, xato
-          parsedMessages.push({
-            id: generateId(),
-            role: "user",
-            content: content,
-            isValid: false,
-            error: "Messages array topilmadi",
-          })
-        }
-      } catch {
-        // Agar bitta JSON sifatida parse bo'lmasa, JSONL sifatida harakat qilamiz
-        const lines = content.split("\n")
+          } else {
+            console.log("❌ Messages array yoki to'g'ri format topilmadi:", singleJson)
+            parsedMessages.push({
+              id: generateId(),
+              role: "user",
+              content: trimmedContent,
+              isValid: false,
+              error: "JSON da 'messages' array yoki to'g'ri chat format topilmadi",
+            })
+          }
+        } catch (singleJsonError) {
+          console.log("Bitta JSON sifatida parse bo'lmadi, JSONL sifatida harakat qilamiz")
 
-        lines.forEach((line, index) => {
-          const trimmedLine = line.trim()
-          if (trimmedLine === "") return
+          // JSONL format (har qatorda alohida JSON)
+          const lines = trimmedContent.split("\n")
 
-          try {
-            const parsed = JSON.parse(trimmedLine)
+          lines.forEach((line, index) => {
+            const trimmedLine = line.trim()
+            if (trimmedLine === "") return
 
-            // Validate chat message format
-            if (typeof parsed === "object" && parsed.role && parsed.content) {
-              if (["system", "user", "assistant"].includes(parsed.role)) {
-                parsedMessages.push({
-                  id: generateId(),
-                  role: parsed.role,
-                  content: parsed.content,
-                  isValid: true,
-                })
+            try {
+              const parsed = JSON.parse(trimmedLine)
+
+              // Chat xabar formatini tekshirish
+              if (parsed && typeof parsed === "object" && parsed.role && parsed.content) {
+                if (["system", "user", "assistant"].includes(parsed.role)) {
+                  parsedMessages.push({
+                    id: generateId(),
+                    role: parsed.role as "system" | "user" | "assistant",
+                    content: String(parsed.content),
+                    isValid: true,
+                  })
+                } else {
+                  parsedMessages.push({
+                    id: generateId(),
+                    role: "user",
+                    content: trimmedLine,
+                    isValid: false,
+                    error: `Qator ${index + 1}: Noto'g'ri role - ${parsed.role}`,
+                  })
+                }
               } else {
                 parsedMessages.push({
                   id: generateId(),
                   role: "user",
                   content: trimmedLine,
                   isValid: false,
-                  error: `Noto'g'ri role: ${parsed.role}`,
+                  error: `Qator ${index + 1}: 'role' va 'content' maydonlari kerak`,
                 })
               }
-            } else {
+            } catch (lineError) {
+              console.log(`Qator ${index + 1} da JSON xato:`, lineError)
               parsedMessages.push({
                 id: generateId(),
                 role: "user",
                 content: trimmedLine,
                 isValid: false,
-                error: "Chat format emas (role va content kerak)",
+                error: `Qator ${index + 1}: JSON format xato - ${lineError instanceof Error ? lineError.message : "Noma'lum xato"}`,
               })
             }
-          } catch (error) {
-            parsedMessages.push({
-              id: generateId(),
-              role: "user",
-              content: trimmedLine,
-              isValid: false,
-              error: error instanceof Error ? error.message : "Noto'g'ri JSON",
-            })
-          }
+          })
+        }
+      } catch (generalError) {
+        console.error("Umumiy parsing xato:", generalError)
+        parsedMessages.push({
+          id: generateId(),
+          role: "user",
+          content: content,
+          isValid: false,
+          error: `Fayl o'qishda xato: ${generalError instanceof Error ? generalError.message : "Noma'lum xato"}`,
         })
       }
 
+      console.log("Yakuniy natija:", parsedMessages)
       setMessages(parsedMessages)
       setIsProcessing(false)
     },
-    [generateId, setIsProcessing, setMessages],
+    [setIsProcessing, setMessages],
   )
 
   // Validate content
@@ -437,7 +484,7 @@ export default function JSONLChatEditor() {
 
       setHasUnsavedChanges(true)
     },
-    [generateId, messages, setMessages, setHasUnsavedChanges],
+    [messages, setMessages, setHasUnsavedChanges],
   )
 
   // Delete message
@@ -465,7 +512,7 @@ export default function JSONLChatEditor() {
         setHasUnsavedChanges(true)
       }
     },
-    [CHAT_TEMPLATES, generateId, setMessages, setHasUnsavedChanges],
+    [CHAT_TEMPLATES, setMessages, setHasUnsavedChanges],
   )
 
   // Copy to clipboard
