@@ -44,35 +44,37 @@ const Message: React.FC<MessageProps> = React.memo(function Message({ blockId, m
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
-        <Select
-          value={message.role}
-          onValueChange={(value) => updateMessageRole(blockId, messageIndex, value as "system" | "user" | "assistant")}
-        >
-          <SelectTrigger className="w-32">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="system">system</SelectItem>
-            <SelectItem value="user">user</SelectItem>
-            <SelectItem value="assistant">assistant</SelectItem>
-          </SelectContent>
-        </Select>
-        <div className="flex gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => copyToClipboard(message.content)}
-            className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
+        <div className="flex items-center gap-2">
+          <Select
+            value={message.role}
+            onValueChange={(value) => updateMessageRole(blockId, messageIndex, value as "system" | "user" | "assistant")}
           >
-            {copiedText === message.content ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />} Add
+            <SelectTrigger className="w-32">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="system">system</SelectItem>
+              <SelectItem value="user">user</SelectItem>
+              <SelectItem value="assistant">assistant</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => copyToClipboard(message.content)}
+            className="w-6 h-6 p-1 text-gray-400 opacity-60 hover:opacity-100 hover:text-blue-400 bg-transparent border-none shadow-none"
+            title="Add"
+          >
+            {copiedText === message.content ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
           </Button>
           <Button
-            variant="outline"
-            size="sm"
+            variant="ghost"
+            size="icon"
             onClick={() => deleteMessage(blockId, messageIndex)}
-            className="bg-red-50 hover:bg-red-100 text-red-700 border-red-200"
+            className="w-6 h-6 p-1 text-gray-400 opacity-60 hover:opacity-100 hover:text-red-400 bg-transparent border-none shadow-none"
+            title="Delete"
           >
-            <Trash2 className="w-4 h-4" /> Delete
+            <Trash2 className="w-4 h-4" />
           </Button>
         </div>
       </div>
