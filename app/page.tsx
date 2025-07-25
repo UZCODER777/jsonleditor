@@ -144,6 +144,10 @@ const Block: React.FC<BlockProps> = React.memo(function Block({ block, blockInde
 
 // JsonlPreview komponenti
 function JsonlPreview({ tab }: { tab: FileTab }) {
+  const [showSystem, setShowSystem] = React.useState(true);
+  const [showUser, setShowUser] = React.useState(true);
+  const [showAssistant, setShowAssistant] = React.useState(true);
+
   if (!tab) return null;
   return (
     <Accordion type="single" collapsible defaultValue="">
@@ -156,6 +160,21 @@ function JsonlPreview({ tab }: { tab: FileTab }) {
         <AccordionContent>
           <Card className="mb-6 border-none shadow-none bg-transparent">
             <CardContent className="p-0">
+              {/* Filter checkboxes */}
+              <div className="flex gap-4 mb-4 items-center">
+                <label className="flex items-center gap-1 text-xs">
+                  <input type="checkbox" checked={showSystem} onChange={e => setShowSystem(e.target.checked)} />
+                  <span className="px-2 py-0.5 rounded bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-200">system</span>
+                </label>
+                <label className="flex items-center gap-1 text-xs">
+                  <input type="checkbox" checked={showUser} onChange={e => setShowUser(e.target.checked)} />
+                  <span className="px-2 py-0.5 rounded bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-200">user</span>
+                </label>
+                <label className="flex items-center gap-1 text-xs">
+                  <input type="checkbox" checked={showAssistant} onChange={e => setShowAssistant(e.target.checked)} />
+                  <span className="px-2 py-0.5 rounded bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-200">assistant</span>
+                </label>
+              </div>
               <div className="space-y-4">
                 {tab.blocks.length === 0 ? (
                   <div className="text-muted-foreground text-center">No blocks to preview</div>
@@ -164,12 +183,18 @@ function JsonlPreview({ tab }: { tab: FileTab }) {
                     <div key={block.id} className="border rounded p-3 bg-muted/30">
                       <div className="font-semibold text-xs mb-2 text-muted-foreground">Block {blockIdx + 1}</div>
                       <div className="space-y-2">
-                        {block.messages.map((msg, msgIdx) => (
-                          <div key={msgIdx} className="flex items-start gap-2">
-                            <span className={`px-2 py-0.5 rounded text-xs font-mono ${msg.role === 'system' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-200' : msg.role === 'user' ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-200' : 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-200'}`}>{msg.role}</span>
-                            <span className="text-sm whitespace-pre-line font-mono">{msg.content || <span className="italic text-muted-foreground">(empty)</span>}</span>
-                          </div>
-                        ))}
+                        {block.messages
+                          .filter(msg =>
+                            (showSystem && msg.role === 'system') ||
+                            (showUser && msg.role === 'user') ||
+                            (showAssistant && msg.role === 'assistant')
+                          )
+                          .map((msg, msgIdx) => (
+                            <div key={msgIdx} className="flex items-start gap-2">
+                              <span className={`px-2 py-0.5 rounded text-xs font-mono ${msg.role === 'system' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-200' : msg.role === 'user' ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-200' : 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-200'}`}>{msg.role}</span>
+                              <span className="text-sm whitespace-pre-line font-mono">{msg.content || <span className="italic text-muted-foreground">(empty)</span>}</span>
+                            </div>
+                          ))}
                       </div>
                     </div>
                   ))
