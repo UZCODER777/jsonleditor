@@ -152,8 +152,8 @@ export default function JSONLChatEditor() {
 
   useEffect(() => {
     setMounted(true)
-    // Boshlang'ich tab yaratish
-    createNewTab("Yangi fayl")
+    // Create new tab
+    createNewTab("default.jsonl")
   }, [])
 
   // Generate unique ID
@@ -182,10 +182,10 @@ export default function JSONLChatEditor() {
       setFileTabs((prev) => {
         const newTabs = prev.filter((tab) => tab.id !== tabId)
         if (newTabs.length === 0) {
-          // Agar hech qanday tab qolmasa, yangi tab yaratamiz
+          // If no tabs remain, create a new one
           const newTab: FileTab = {
             id: generateId(),
-            name: "Yangi fayl",
+            name: "default.jsonl",
             blocks: [
               {
                 id: generateId(),
@@ -197,7 +197,7 @@ export default function JSONLChatEditor() {
           setActiveTabId(newTab.id)
           return [newTab]
         } else {
-          // Agar yopilayotgan tab active bo'lsa, boshqa tabni active qilamiz
+          // If the tab being closed is active, activate the next one
           if (tabId === activeTabId) {
             setActiveTabId(newTabs[0].id)
           }
@@ -333,8 +333,8 @@ export default function JSONLChatEditor() {
         const trimmedContent = content.trim()
         if (!trimmedContent) {
           toast({
-            title: "Bo'sh fayl",
-            description: "Fayl bo'sh yoki faqat bo'sh joylardan iborat",
+            title: "Empty file",
+            description: "File is empty or contains only whitespace",
             variant: "destructive",
           })
           return
@@ -342,12 +342,12 @@ export default function JSONLChatEditor() {
 
         let parsedMessages: ChatMessage[] = []
 
-        // Avval butun JSON obyekt sifatida parse qilishga harakat qilamiz
+        // First, try to parse as a JSON object
         try {
           const jsonData = JSON.parse(trimmedContent)
           console.log("Successfully parsed as JSON object:", jsonData)
 
-          // "messages" massivi mavjud bo'lsa
+          // "messages" array exists
           if (jsonData && typeof jsonData === "object" && Array.isArray(jsonData.messages)) {
             console.log("Messages array format detected with", jsonData.messages.length, "messages")
 
@@ -359,7 +359,7 @@ export default function JSONLChatEditor() {
         } catch (jsonError) {
           console.log("Not a valid JSON object, trying JSONL format:", jsonError)
 
-          // JSONL format (har qatorda alohida JSON)
+          // JSONL format (each line is a JSON object)
           const lines = trimmedContent.split("\n")
 
           for (let i = 0; i < lines.length; i++) {
@@ -375,7 +375,7 @@ export default function JSONLChatEditor() {
                     content: typeof parsed.content === "string" ? parsed.content : JSON.stringify(parsed.content),
                   })
                 } else if (parsed.messages && Array.isArray(parsed.messages)) {
-                  // Agar bu messages massivi bo'lsa
+                  // If this is a messages array
                   parsed.messages.forEach((msg: any) => {
                     if (msg.role && msg.content) {
                       parsedMessages.push({
@@ -403,11 +403,11 @@ export default function JSONLChatEditor() {
         }
 
         if (parsedMessages.length === 0) {
-          // Agar hech qanday xabar topilmasa, butun matnni bitta xabar sifatida ko'rsatamiz
+          // If no messages found, show the entire text as a single message
           parsedMessages = [{ role: "user", content: trimmedContent }]
         }
 
-        // Xabarlarni bloklarga ajratamiz (har 3 ta xabar = 1 blok)
+        // Split messages into blocks (3 messages per block)
         const newBlocks: ChatBlock[] = []
         for (let i = 0; i < parsedMessages.length; i += 3) {
           const blockMessages = parsedMessages.slice(i, i + 3)
@@ -417,7 +417,7 @@ export default function JSONLChatEditor() {
           })
         }
 
-        // Yangi tab yaratamiz yoki mavjud tabni yangilaymiz
+        // Create new tab or update existing one
         const newTab: FileTab = {
           id: generateId(),
           name: fileName,
@@ -429,14 +429,14 @@ export default function JSONLChatEditor() {
         setActiveTabId(newTab.id)
 
         toast({
-          title: "Muvaffaqiyatli yuklandi",
-          description: `${parsedMessages.length} ta xabar, ${newBlocks.length} ta blokda yuklandi`,
+          title: "Successfully uploaded",
+          description: `${parsedMessages.length} messages, ${newBlocks.length} blocks loaded`,
         })
       } catch (error) {
         console.error("General parsing error:", error)
         toast({
-          title: "Parsing xatosi",
-          description: `Faylni o'qishda xatolik: ${error instanceof Error ? error.message : "Noma'lum xato"}`,
+          title: "Parsing error",
+          description: `Error reading file: ${error instanceof Error ? error.message : "Unknown error"}`,
           variant: "destructive",
         })
       }
@@ -455,8 +455,8 @@ export default function JSONLChatEditor() {
           if (file.size > 10 * 1024 * 1024) {
             // 10MB limit
             toast({
-              title: "Fayl juda katta",
-              description: `${file.name} hajmi 10MB dan oshmasligi kerak`,
+              title: "File too large",
+              description: `${file.name} size must not exceed 10MB`,
               variant: "destructive",
             })
             continue
@@ -469,8 +469,8 @@ export default function JSONLChatEditor() {
         } catch (error) {
           console.error("Error reading file:", error)
           toast({
-            title: "Fayl o'qish xatosi",
-            description: `${file.name} ni o'qishda xatolik: ${error instanceof Error ? error.message : "Noma'lum xato"}`,
+            title: "File read error",
+            description: `${file.name} reading error: ${error instanceof Error ? error.message : "Unknown error"}`,
             variant: "destructive",
           })
         }
@@ -492,8 +492,8 @@ export default function JSONLChatEditor() {
           validFiles.push(file)
         } else {
           toast({
-            title: "Noto'g'ri fayl formati",
-            description: `${file.name} - faqat .jsonl yoki .json fayllar qabul qilinadi`,
+            title: "Invalid file format",
+            description: `${file.name} - only .jsonl or .json files are accepted`,
             variant: "destructive",
           })
         }
@@ -505,7 +505,7 @@ export default function JSONLChatEditor() {
         handleFileUpload(fileList.files)
       }
 
-      // Input ni tozalash
+      // Clear input
       event.target.value = ""
     },
     [handleFileUpload, toast],
@@ -519,14 +519,14 @@ export default function JSONLChatEditor() {
         setCopiedText(text)
         setTimeout(() => setCopiedText(null), 2000)
         toast({
-          title: "Nusxalandi",
-          description: "Matn buferga nusxalandi",
+          title: "Copied",
+          description: "Text copied to clipboard",
         })
       } catch (error) {
         console.error("Failed to copy:", error)
         toast({
-          title: "Xato",
-          description: "Nusxalashda xatolik yuz berdi",
+          title: "Error",
+          description: "Copying failed",
           variant: "destructive",
         })
       }
@@ -540,7 +540,7 @@ export default function JSONLChatEditor() {
       if (!activeTab) return
 
       try {
-        // Barcha xabarlarni yig'ish
+        // Collect all messages
         const allMessages: ChatMessage[] = []
         activeTab.blocks.forEach((block) => {
           block.messages.forEach((message) => {
@@ -552,8 +552,8 @@ export default function JSONLChatEditor() {
 
         if (allMessages.length === 0) {
           toast({
-            title: "Xabarlar yo'q",
-            description: "Yuklab olish uchun kamida bitta xabar kiriting",
+            title: "No messages",
+            description: "Please enter at least one message to load",
             variant: "destructive",
           })
           return
@@ -585,18 +585,18 @@ export default function JSONLChatEditor() {
         document.body.removeChild(a)
         URL.revokeObjectURL(url)
 
-        // Tab ni saved deb belgilaymiz
+        // Mark tab as saved
         updateActiveTab((tab) => ({ ...tab, hasUnsavedChanges: false }))
 
         toast({
-          title: "Muvaffaqiyatli",
-          description: `${filename} yuklab olindi`,
+          title: "Success",
+          description: `${filename} downloaded`,
         })
       } catch (error) {
         console.error("Error downloading file:", error)
         toast({
-          title: "Xato",
-          description: "Faylni yuklab olishda xatolik yuz berdi",
+          title: "Error",
+          description: "Failed to download file",
           variant: "destructive",
         })
       }
@@ -604,7 +604,7 @@ export default function JSONLChatEditor() {
     [activeTab, updateActiveTab, toast],
   )
 
-  // Test uchun sample data
+  // Sample data for testing
   const loadSampleData = useCallback(() => {
     if (!activeTab) return
 
@@ -612,12 +612,12 @@ export default function JSONLChatEditor() {
       {
         id: generateId(),
         messages: [
-          { role: "system", content: "Siz foydali AI yordamchisiz." },
-          { role: "user", content: "Salom! Qanday yordam bera olasiz?" },
+          { role: "system", content: "You are a helpful AI assistant." },
+          { role: "user", content: "Hello! How can I help you?" },
           {
             role: "assistant",
             content:
-              "Salom! Men turli savollarga javob berish, matn yozish va boshqa vazifalarni bajarishda yordam bera olaman.",
+              "Hello! I can answer questions, write text, and perform other tasks.",
           },
         ],
       },
@@ -630,8 +630,8 @@ export default function JSONLChatEditor() {
     }))
 
     toast({
-      title: "Namuna yuklandi",
-      description: "Test uchun namuna ma'lumotlar yuklandi",
+      title: "Sample data loaded",
+      description: "Sample data loaded for testing",
     })
   }, [activeTab, updateActiveTab, toast])
 
@@ -650,18 +650,18 @@ export default function JSONLChatEditor() {
             </div>
             <div>
               <h1 className="text-xl md:text-2xl font-bold">JSONL Chat Editor</h1>
-              <p className="text-xs text-muted-foreground">{fileTabs.length} ta fayl ochiq</p>
+              <p className="text-xs text-muted-foreground">{fileTabs.length} open files</p>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
-            <Button onClick={() => createNewTab("Yangi fayl")} variant="outline" size="sm">
+            <Button onClick={() => createNewTab("default.jsonl")} variant="outline" size="sm">
               <Plus className="w-4 h-4 mr-2" />
-              Yangi Tab
+              New Tab
             </Button>
 
             <Button onClick={loadSampleData} variant="outline" size="sm">
-              🧪 Test Ma'lumot
+              🧪 Test Data
             </Button>
 
             <Button
@@ -675,7 +675,7 @@ export default function JSONLChatEditor() {
               ) : (
                 <Upload className="w-4 h-4 mr-2" />
               )}
-              Fayl Yuklash
+              Upload File
             </Button>
             <input
               ref={fileInputRef}
@@ -689,7 +689,7 @@ export default function JSONLChatEditor() {
                     await new Promise((res) => setTimeout(res, 10))
                     setUploadProgress(i)
                   }
-                  // Faylni o'qish va parseJSONL orqali ochish (oldingi holat)
+                  // Read file and parseJSONL (previous state)
                   const file = e.target.files[0]
                   const reader = new FileReader()
                   reader.onload = (event) => {
@@ -697,7 +697,7 @@ export default function JSONLChatEditor() {
                       const text = event.target?.result as string
                       parseJSONL(text, file.name)
                     } catch (err) {
-                      toast({ title: "Faylni o'qib bo'lmadi", description: String(err), variant: "destructive" })
+                      toast({ title: "Failed to read file", description: String(err), variant: "destructive" })
                     }
                     setIsUploading(false)
                   }
@@ -716,7 +716,7 @@ export default function JSONLChatEditor() {
                       style={{ width: `${uploadProgress}%` }}
                     />
                   </div>
-                  <span className="text-sm font-medium text-gray-700 dark:text-gray-200">Yuklanmoqda... {uploadProgress}%</span>
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-200">Uploading... {uploadProgress}%</span>
                 </div>
               </div>
             )}
@@ -734,7 +734,7 @@ export default function JSONLChatEditor() {
             <Button variant="ghost" size="icon" onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>
               <Sun className="h-4 w-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
               <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
-              <span className="sr-only">Mavzu o'zgartirish</span>
+              <span className="sr-only">Toggle theme</span>
             </Button>
           </div>
         </div>
@@ -774,15 +774,15 @@ export default function JSONLChatEditor() {
           {/* Tab Contents */}
           {fileTabs.map((tab) => (
             <TabsContent key={tab.id} value={tab.id} className="mt-0">
-              {/* Fayl ma'lumotlari */}
+              {/* File information */}
               <div className="mb-4 p-4 bg-white dark:bg-gray-800 rounded-lg shadow-sm border">
-                <h3 className="font-semibold mb-2">Fayl ma'lumotlari:</h3>
+                <h3 className="font-semibold mb-2">File information:</h3>
                 <p className="text-sm text-muted-foreground">
-                  📁 Fayl nomi: {tab.name}
-                  <br />📊 Jami bloklar: {tab.blocks.length}
-                  <br />📝 Jami xabarlar: {tab.blocks.reduce((total, block) => total + block.messages.length, 0)}
+                  📁 File name: {tab.name}
+                  <br />📊 Total blocks: {tab.blocks.length}
+                  <br />📝 Total messages: {tab.blocks.reduce((total, block) => total + block.messages.length, 0)}
                   <br />
-                  {tab.hasUnsavedChanges && <span className="text-orange-500">⚠️ O'zgarishlar saqlanmagan</span>}
+                  {tab.hasUnsavedChanges && <span className="text-orange-500">⚠️ Unsaved changes</span>}
                 </p>
               </div>
 
@@ -814,8 +814,8 @@ export default function JSONLChatEditor() {
                 {tab.blocks.length === 0 && (
                   <div className="text-center py-12 text-muted-foreground">
                     <MessageSquare className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                    <p className="text-lg mb-2">Hech qanday blok yo'q</p>
-                    <p className="text-sm">Yuqoridagi tugmani bosib yangi blok qo'shing</p>
+                    <p className="text-lg mb-2">No blocks yet</p>
+                    <p className="text-sm">Click the button above to add a new block</p>
                   </div>
                 )}
               </div>
