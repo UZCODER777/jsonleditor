@@ -609,8 +609,11 @@ export default function JSONLChatEditor() {
           content = JSON.stringify(messagesObj, null, 2)
           filename = tab.name.replace(".jsonl", ".json") || "chat.json"
         } else {
-          // JSONL format
-          content = allMessages.map((msg) => JSON.stringify(msg)).join("\n")
+          // Har bir blockni {messages: [...]} ko'rinishida alohida qator qilib yozamiz
+          content = tab.blocks
+            .filter((block) => block.messages.length > 0)
+            .map((block) => JSON.stringify({ messages: block.messages }))
+            .join("\n")
           filename = tab.name || "chat.jsonl"
         }
 
