@@ -43,8 +43,14 @@ interface MessageProps {
   deleteMessage: (blockId: string, messageIndex: number) => void;
 }
 const Message: React.FC<MessageProps> = React.memo(function Message({ blockId, message, messageIndex, copiedText, updateMessageRole, updateMessageContent, copyToClipboard, deleteMessage }) {
+  // Rolga qarab rangli border/fon/badge
+  let roleClass = "";
+  if (message.role === "system") roleClass = "border-l-4 border-blue-400 bg-blue-50 dark:bg-blue-950/40";
+  else if (message.role === "user") roleClass = "border-l-4 border-green-400 bg-green-50 dark:bg-green-950/40";
+  else if (message.role === "assistant") roleClass = "border-l-4 border-yellow-400 bg-yellow-50 dark:bg-yellow-950/40";
+
   return (
-    <div className="space-y-2">
+    <div className={`space-y-2 p-3 rounded-md ${roleClass}`}>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Select
@@ -60,6 +66,7 @@ const Message: React.FC<MessageProps> = React.memo(function Message({ blockId, m
               <SelectItem value="assistant">assistant</SelectItem>
             </SelectContent>
           </Select>
+          <span className={`px-2 py-0.5 rounded text-xs font-mono ${message.role === 'system' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-200' : message.role === 'user' ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-200' : 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-200'}`}>{message.role}</span>
           <Button
             variant="ghost"
             size="icon"
