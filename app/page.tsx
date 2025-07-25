@@ -831,8 +831,24 @@ return blocks.map(block => ({
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+      {/* Sticky warning banner: test mode */}
+      <div className="sticky top-0 z-50 w-full">
+        <div className="bg-gradient-to-r from-yellow-300 to-yellow-400 text-yellow-900 font-semibold text-center py-2 shadow-md border-b border-yellow-400">
+          ⚠️ Ushbu sayt <span className="font-bold">TEST REJIMIDA</span> ishlamoqda. Ma'lumotlar vaqtincha saqlanadi va xatoliklar bo'lishi mumkin.<br />
+          <span className="text-sm font-normal">Aloqa uchun:
+            <a
+              href="https://t.me/shohjahon_asqarov"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline hover:text-blue-700 transition-colors"
+            >
+              Telegram: @shohjahon_asqarov
+            </a>
+          </span>
+        </div>
+      </div>
       {/* Header */}
-      <header className="border-b bg-white dark:bg-gray-800 shadow-sm sticky top-0 z-50">
+      <header className="border-b bg-white dark:bg-gray-800 shadow-sm sticky top-[48px] z-40">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
@@ -845,6 +861,7 @@ return blocks.map(block => ({
           </div>
 
           <div className="flex items-center gap-2">
+          
             <Button onClick={() => createNewTab("default.jsonl")} variant="outline" size="sm">
               <Plus className="w-4 h-4 mr-2" />
               New Tab
