@@ -13,6 +13,8 @@ import { useToast } from "@/hooks/use-toast"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/components/ui/accordion"
+import dynamic from "next/dynamic"
+const MonacoEditor = dynamic(() => import("@monaco-editor/react"), { ssr: false });
 
 interface ChatMessage {
   role: "system" | "user" | "assistant"
@@ -42,7 +44,7 @@ interface MessageProps {
   copyToClipboard: (text: string) => void;
   deleteMessage: (blockId: string, messageIndex: number) => void;
 }
-const Message: React.FC<MessageProps> = React.memo(function Message({ blockId, message, messageIndex, copiedText, updateMessageRole, updateMessageContent, copyToClipboard, deleteMessage }) {
+const Message: React.FC<MessageProps & { addMessageAfter: (blockId: string, messageIndex: number) => void }> = React.memo(function Message({ blockId, message, messageIndex, copiedText, updateMessageRole, updateMessageContent, copyToClipboard, deleteMessage, addMessageAfter }) {
   // Rolga qarab rangli border/fon/badge
   let roleClass = "";
   if (message.role === "system") roleClass = "border-l-4 border-blue-400 bg-blue-50 dark:bg-blue-950/40";
@@ -66,13 +68,12 @@ const Message: React.FC<MessageProps> = React.memo(function Message({ blockId, m
               <SelectItem value="assistant">assistant</SelectItem>
             </SelectContent>
           </Select>
-          <span className={`px-2 py-0.5 rounded text-xs font-mono ${message.role === 'system' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-200' : message.role === 'user' ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-200' : 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-200'}`}>{message.role}</span>
           <Button
             variant="ghost"
             size="icon"
             onClick={() => copyToClipboard(message.content)}
             className="w-6 h-6 p-1 text-gray-400 opacity-60 hover:opacity-100 hover:text-blue-400 bg-transparent border-none shadow-none"
-            title="Add"
+            title="Copy"
           >
             {copiedText === message.content ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
           </Button>
@@ -84,6 +85,15 @@ const Message: React.FC<MessageProps> = React.memo(function Message({ blockId, m
             title="Delete"
           >
             <Trash2 className="w-4 h-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => addMessageAfter(blockId, messageIndex)}
+            className="w-6 h-6 p-1 text-gray-400 opacity-60 hover:opacity-100 hover:text-green-500 bg-transparent border-none shadow-none"
+            title="Add message after"
+          >
+            <Plus className="w-4 h-4" />
           </Button>
         </div>
       </div>
@@ -108,8 +118,10 @@ interface BlockProps {
   deleteMessage: (blockId: string, messageIndex: number) => void;
   addMessage: (blockId: string) => void;
   deleteBlock: (blockId: string) => void;
+  addNewBlockAfter: (blockId: string) => void;
+  addMessageAfter: (blockId: string, messageIndex: number) => void;
 }
-const Block: React.FC<BlockProps> = React.memo(function Block({ block, blockIndex, copiedText, updateMessageRole, updateMessageContent, copyToClipboard, deleteMessage, addMessage, deleteBlock }) {
+const Block: React.FC<BlockProps & { addNewBlockAfter: (blockId: string) => void }> = React.memo(function Block({ block, blockIndex, copiedText, updateMessageRole, updateMessageContent, copyToClipboard, deleteMessage, addMessage, deleteBlock, addNewBlockAfter, addMessageAfter }) {
   return (
     <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border">
       <div className="p-4 space-y-4">
@@ -124,18 +136,29 @@ const Block: React.FC<BlockProps> = React.memo(function Block({ block, blockInde
             updateMessageContent={updateMessageContent}
             copyToClipboard={copyToClipboard}
             deleteMessage={deleteMessage}
+            addMessageAfter={addMessageAfter}
           />
         ))}
       </div>
-      <div className="flex items-center justify-between p-4 border-t bg-gray-50 dark:bg-gray-700 rounded-b-lg">
-        <Button
-          onClick={() => addMessage(block.id)}
-          variant="outline"
-          size="sm"
-          className="bg-green-50 hover:bg-green-100 text-green-700 border-green-200"
-        >
-          <Plus className="w-4 h-4 mr-2" /> Add message
-        </Button>
+      <div className="flex items-center justify-between p-4 border-t bg-gray-50 dark:bg-gray-700 rounded-b-lg gap-2">
+        <div className="flex gap-2">
+          <Button
+            onClick={() => addMessage(block.id)}
+            variant="outline"
+            size="sm"
+            className="bg-green-50 hover:bg-green-100 text-green-700 border-green-200"
+          >
+            <Plus className="w-4 h-4 mr-2" /> Add message
+          </Button>
+          <Button
+            onClick={() => addNewBlockAfter(block.id)}
+            variant="outline"
+            size="sm"
+            className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
+          >
+            <Plus className="w-4 h-4 mr-2" /> Add block
+          </Button>
+        </div>
         <Button
           onClick={() => deleteBlock(block.id)}
           variant="outline"
@@ -228,6 +251,17 @@ export default function JSONLChatEditor() {
   const [mounted, setMounted] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
+
+  const [customCode, setCustomCode] = useState<string>(`// Example: Make all block messages UPPERCASE
+return blocks.map(block => ({
+  ...block,
+  messages: block.messages.map(msg => ({
+    ...msg,
+    content: msg.content.toUpperCase()
+  }))
+}));`);
+  const [customCodeError, setCustomCodeError] = useState<string | null>(null);
+  const [isRunningCustomCode, setIsRunningCustomCode] = useState(false);
 
   useEffect(() => {
     setMounted(true)
@@ -382,7 +416,7 @@ export default function JSONLChatEditor() {
     [updateActiveTab],
   )
 
-  // Add new block
+  // Add new block to the end, always with 3 default messages
   const addNewBlock = useCallback(() => {
     const newBlock: ChatBlock = {
       id: generateId(),
@@ -391,13 +425,13 @@ export default function JSONLChatEditor() {
         { role: "user", content: "" },
         { role: "assistant", content: "" },
       ],
-    }
+    };
     updateActiveTab((tab) => ({
       ...tab,
       blocks: [...tab.blocks, newBlock],
       hasUnsavedChanges: true,
-    }))
-  }, [updateActiveTab])
+    }));
+  }, [updateActiveTab]);
 
   // Delete block
   const deleteBlock = useCallback(
@@ -410,6 +444,32 @@ export default function JSONLChatEditor() {
     },
     [updateActiveTab],
   )
+
+  // Add new block after a specific block
+  const addNewBlockAfter = useCallback((afterBlockId: string) => {
+    updateActiveTab((tab) => {
+      const newBlock: ChatBlock = {
+        id: generateId(),
+        messages: [
+          { role: "system", content: "" },
+          { role: "user", content: "" },
+          { role: "assistant", content: "" },
+        ],
+      };
+      const idx = tab.blocks.findIndex((b) => b.id === afterBlockId);
+      if (idx === -1) return tab;
+      const newBlocks = [
+        ...tab.blocks.slice(0, idx + 1),
+        newBlock,
+        ...tab.blocks.slice(idx + 1),
+      ];
+      return {
+        ...tab,
+        blocks: newBlocks,
+        hasUnsavedChanges: true,
+      };
+    });
+  }, [updateActiveTab]);
 
   // Parse JSONL content
   const parseJSONL = useCallback(
@@ -722,6 +782,49 @@ export default function JSONLChatEditor() {
     setEditingTabId(null)
   }
 
+  // JSONLChatEditor ichida yangi funksiya:
+  const addMessageAfter = useCallback((blockId: string, messageIndex: number) => {
+    updateActiveTab((tab) => ({
+      ...tab,
+      blocks: tab.blocks.map((block) =>
+        block.id === blockId
+          ? {
+            ...block,
+            messages: [
+              ...block.messages.slice(0, messageIndex + 1),
+              { role: "user", content: "" },
+              ...block.messages.slice(messageIndex + 1),
+            ],
+          }
+          : block
+      ),
+      hasUnsavedChanges: true,
+    }));
+  }, [updateActiveTab]);
+
+  // Custom code runner
+  const runCustomCode = useCallback(() => {
+    setCustomCodeError(null);
+    setIsRunningCustomCode(true);
+    try {
+      // Only allow access to blocks (deep copy for safety)
+      const blocksCopy = JSON.parse(JSON.stringify(activeTab?.blocks || []));
+      // eslint-disable-next-line no-new-func
+      const fn = new Function('blocks', customCode);
+      const result = fn(blocksCopy);
+      if (Array.isArray(result)) {
+        updateActiveTab(tab => ({ ...tab, blocks: result, hasUnsavedChanges: true }));
+        toast({ title: "Success", description: "Custom code applied to blocks." });
+      } else {
+        setCustomCodeError("Your code must return an array of blocks.");
+      }
+    } catch (e: any) {
+      setCustomCodeError(e.message || String(e));
+    } finally {
+      setIsRunningCustomCode(false);
+    }
+  }, [customCode, activeTab, updateActiveTab, toast]);
+
   if (!mounted) {
     return null
   }
@@ -823,6 +926,51 @@ export default function JSONLChatEditor() {
       </header>
 
       <main className="container mx-auto px-4 py-6">
+        {/* --- Run Custom Code Panel --- */}
+        <div className="mb-8">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border p-4">
+            <h2 className="text-lg font-semibold mb-2">Run Custom Code</h2>
+            <p className="text-xs text-muted-foreground mb-2">You can use the <code>blocks</code> variable to manipulate all blocks. Your code must return a new array of blocks.</p>
+            <div className="mb-2">
+              <MonacoEditor
+                height="240px"
+                defaultLanguage="javascript"
+                theme="vs-dark"
+                value={customCode}
+                onChange={(v: string | undefined) => setCustomCode(v || "")}
+                options={{
+                  minimap: { enabled: false },
+                  fontSize: 14,
+                  fontFamily: 'Fira Mono, monospace',
+                  wordWrap: 'on',
+                  scrollBeyondLastLine: false,
+                  lineNumbers: "on",
+                }}
+              />
+            </div>
+            {/* Custom code usage guide */}
+            <div className="mb-4 p-3 rounded bg-muted/40 text-xs text-muted-foreground">
+              <b>How to use:</b>
+              <ul className="list-disc ml-5 mt-1 space-y-1">
+                <li><b>blocks</b> is an array of all blocks. Each block has <b>id</b> and <b>messages</b> (array).</li>
+                <li>Each <b>message</b> has <b>role</b> (system/user/assistant) and <b>content</b> (string).</li>
+                <li>Your code <b>must return a new array of blocks</b> (use <code>return ...</code>).</li>
+                <li>You can use <code>map</code>, <code>filter</code>, <code>forEach</code> and all JS array methods.</li>
+                <li><b>Do not use</b> async code, network requests, or browser APIs (window, document, etc).</li>
+                <li>Example: <code>return blocks.map(block =&gt; ...)</code></li>
+                <li>Invalid code or non-array return will show an error.</li>
+              </ul>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button onClick={runCustomCode} disabled={isRunningCustomCode} className="bg-blue-600 hover:bg-blue-700 text-white">
+                {isRunningCustomCode ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                Run
+              </Button>
+              {customCodeError && <span className="text-red-500 text-xs ml-2">{customCodeError}</span>}
+            </div>
+          </div>
+        </div>
+        {/* --- End Custom Code Panel --- */}
         <Tabs value={activeTabId} onValueChange={setActiveTabId} className="w-full">
           {/* Tab Headers */}
           <TabsList className="flex w-full gap-2 bg-transparent mb-6 justify-start">
@@ -942,17 +1090,17 @@ export default function JSONLChatEditor() {
                       deleteMessage={deleteMessage}
                       addMessage={addMessage}
                       deleteBlock={deleteBlock}
+                      addNewBlockAfter={addNewBlockAfter}
+                      addMessageAfter={addMessageAfter}
                     />
                   ))}
-
-                  {/* Add New Block Button */}
+                  {/* Add new block button faqat bloklar ro'yxatining pastida */}
                   <div className="text-center">
                     <Button onClick={addNewBlock} className="bg-green-600 hover:bg-green-700 text-white">
                       <Plus className="w-4 h-4 mr-2" />
                       Add message block
                     </Button>
                   </div>
-
                   {tab.blocks.length === 0 && (
                     <div className="text-center py-12 text-muted-foreground">
                       <MessageSquare className="w-12 h-12 mx-auto mb-4 opacity-50" />
