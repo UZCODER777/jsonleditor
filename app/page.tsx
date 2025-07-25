@@ -395,81 +395,64 @@ export default function JSONLChatEditor() {
           return
         }
 
-        let parsedMessages: ChatMessage[] = []
+        let newBlocks: ChatBlock[] = []
 
         // First, try to parse as a JSON object
         try {
           const jsonData = JSON.parse(trimmedContent)
-          console.log("Successfully parsed as JSON object:", jsonData)
-
-          // "messages" array exists
+          // Agar messages massivli bitta obyekt bo'lsa
           if (jsonData && typeof jsonData === "object" && Array.isArray(jsonData.messages)) {
-            console.log("Messages array format detected with", jsonData.messages.length, "messages")
-
-            parsedMessages = jsonData.messages.map((msg: any) => ({
-              role: msg.role || "user",
-              content: typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content),
-            }))
+            newBlocks.push({
+              id: generateId(),
+              messages: jsonData.messages.map((msg: any) => ({
+                role: msg.role || "user",
+                content: typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content),
+              })),
+            })
+          } else if (Array.isArray(jsonData)) {
+            // Agar massiv bo'lsa, har bir element messages massivli obyekt bo'lishi mumkin
+            jsonData.forEach((item: any) => {
+              if (item && Array.isArray(item.messages)) {
+                newBlocks.push({
+                  id: generateId(),
+                  messages: item.messages.map((msg: any) => ({
+                    role: msg.role || "user",
+                    content: typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content),
+                  })),
+                })
+              }
+            })
           }
         } catch (jsonError) {
-          console.log("Not a valid JSON object, trying JSONL format:", jsonError)
-
           // JSONL format (each line is a JSON object)
           const lines = trimmedContent.split("\n")
-
           for (let i = 0; i < lines.length; i++) {
             const line = lines[i].trim()
             if (line === "") continue
-
             try {
               const parsed = JSON.parse(line)
-              if (parsed && typeof parsed === "object") {
-                if (parsed.role && parsed.content) {
-                  parsedMessages.push({
-                    role: parsed.role as "system" | "user" | "assistant",
-                    content: typeof parsed.content === "string" ? parsed.content : JSON.stringify(parsed.content),
-                  })
-                } else if (parsed.messages && Array.isArray(parsed.messages)) {
-                  // If this is a messages array
-                  parsed.messages.forEach((msg: any) => {
-                    if (msg.role && msg.content) {
-                      parsedMessages.push({
-                        role: msg.role as "system" | "user" | "assistant",
-                        content: typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content),
-                      })
-                    }
-                  })
-                } else {
-                  console.log(`Line ${i + 1} has invalid format:`, parsed)
-                  parsedMessages.push({
-                    role: "user",
-                    content: JSON.stringify(parsed),
-                  })
-                }
+              if (parsed && typeof parsed === "object" && Array.isArray(parsed.messages)) {
+                newBlocks.push({
+                  id: generateId(),
+                  messages: parsed.messages.map((msg: any) => ({
+                    role: msg.role || "user",
+                    content: typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content),
+                  })),
+                })
               }
             } catch (lineError) {
-              console.log(`Line ${i + 1} parsing error:`, lineError)
-              parsedMessages.push({
-                role: "user",
-                content: line,
+              // Agar noto'g'ri qator bo'lsa, uni bitta block sifatida saqlaymiz
+              newBlocks.push({
+                id: generateId(),
+                messages: [{ role: "user", content: line }],
               })
             }
           }
         }
 
-        if (parsedMessages.length === 0) {
-          // If no messages found, show the entire text as a single message
-          parsedMessages = [{ role: "user", content: trimmedContent }]
-        }
-
-        // Split messages into blocks (3 messages per block)
-        const newBlocks: ChatBlock[] = []
-        for (let i = 0; i < parsedMessages.length; i += 3) {
-          const blockMessages = parsedMessages.slice(i, i + 3)
-          newBlocks.push({
-            id: generateId(),
-            messages: blockMessages,
-          })
+        if (newBlocks.length === 0) {
+          // Agar hech narsa topilmasa, butun matnni bitta block sifatida saqlaymiz
+          newBlocks = [{ id: generateId(), messages: [{ role: "user", content: trimmedContent }] }]
         }
 
         // Create new tab or update existing one
@@ -485,7 +468,7 @@ export default function JSONLChatEditor() {
 
         toast({
           title: "Successfully uploaded",
-          description: `${parsedMessages.length} messages, ${newBlocks.length} blocks loaded`,
+          description: `${newBlocks.reduce((acc, b) => acc + b.messages.length, 0)} messages, ${newBlocks.length} blocks loaded`,
         })
       } catch (error) {
         console.error("General parsing error:", error)
