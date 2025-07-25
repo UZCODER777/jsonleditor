@@ -3,7 +3,7 @@
 import type React from "react"
 
 import { useState, useCallback, useRef, useEffect } from "react"
-import { Plus, Trash2, Download, Upload, Save, Moon, Sun, Copy, Check, MessageSquare, X, FileText } from "lucide-react"
+import { Plus, Trash2, Download, Upload, Save, Moon, Sun, Copy, Check, MessageSquare, X, FileText, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -38,6 +38,8 @@ export default function JSONLChatEditor() {
   const { theme, setTheme } = useTheme()
   const { toast } = useToast()
   const [mounted, setMounted] = useState(false)
+  const [isUploading, setIsUploading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState(0)
 
   useEffect(() => {
     setMounted(true)
@@ -553,10 +555,62 @@ export default function JSONLChatEditor() {
               🧪 Test Ma'lumot
             </Button>
 
-            <Button onClick={() => fileInputRef.current?.click()} variant="outline" size="sm">
-              <Upload className="w-4 h-4 mr-2" />
+            <Button
+              onClick={() => fileInputRef.current?.click()}
+              variant="outline"
+              size="sm"
+              disabled={isUploading}
+            >
+              {isUploading ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Upload className="w-4 h-4 mr-2" />
+              )}
               Fayl Yuklash
             </Button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              className="hidden"
+              onChange={async (e) => {
+                if (e.target.files && e.target.files.length > 0) {
+                  setIsUploading(true)
+                  setUploadProgress(0)
+                  for (let i = 1; i <= 100; i++) {
+                    await new Promise((res) => setTimeout(res, 10))
+                    setUploadProgress(i)
+                  }
+                  // Faylni o'qish va parseJSONL orqali ochish (oldingi holat)
+                  const file = e.target.files[0]
+                  const reader = new FileReader()
+                  reader.onload = (event) => {
+                    try {
+                      const text = event.target?.result as string
+                      parseJSONL(text, file.name)
+                    } catch (err) {
+                      toast({ title: "Faylni o'qib bo'lmadi", description: String(err), variant: "destructive" })
+                    }
+                    setIsUploading(false)
+                  }
+                  reader.readAsText(file)
+                  e.target.value = "" // allow re-upload same file
+                }
+              }}
+            />
+            {/* Overlay progress bar in main UI */}
+            {isUploading && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+                <div className="bg-white dark:bg-gray-900 rounded-lg shadow-lg p-8 flex flex-col items-center">
+                  <div className="w-64 h-3 bg-gray-200 rounded-full overflow-hidden mb-4">
+                    <div
+                      className="h-full bg-blue-600 transition-all duration-100"
+                      style={{ width: `${uploadProgress}%` }}
+                    />
+                  </div>
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-200">Yuklanmoqda... {uploadProgress}%</span>
+                </div>
+              </div>
+            )}
 
             <Button onClick={() => downloadFile("messages")} variant="outline" size="sm">
               <Save className="w-4 h-4 mr-2" />
@@ -729,16 +783,6 @@ export default function JSONLChatEditor() {
             </TabsContent>
           ))}
         </Tabs>
-
-        {/* Hidden file input - multiple files support */}
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".jsonl,.json"
-          multiple
-          onChange={handleFileSelect}
-          className="hidden"
-        />
       </main>
 
       <Toaster />
