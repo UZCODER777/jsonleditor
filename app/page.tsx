@@ -3,7 +3,7 @@
 import React, { useMemo } from "react"
 
 import { useState, useCallback, useRef, useEffect } from "react"
-import { Plus, Trash2, Download, Upload, Save, Moon, Sun, Copy, Check, MessageSquare, X, FileText, Loader2 } from "lucide-react"
+import { Plus, Trash2, Download, Upload, Save, Moon, Sun, Copy, Check, MessageSquare, X, FileText, Loader2, Pencil, Folder, LayoutGrid, AlertTriangle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -144,6 +144,8 @@ export default function JSONLChatEditor() {
   const [fileTabs, setFileTabs] = useState<FileTab[]>([])
   const [activeTabId, setActiveTabId] = useState<string>("")
   const [copiedText, setCopiedText] = useState<string | null>(null)
+  const [editingTabId, setEditingTabId] = useState<string | null>(null)
+  const [editingName, setEditingName] = useState<string>("")
 
   const fileInputRef = useRef<HTMLInputElement>(null)
   const { theme, setTheme } = useTheme()
@@ -637,6 +639,19 @@ export default function JSONLChatEditor() {
     })
   }, [activeTab, updateActiveTab, toast])
 
+  // Fayl nomini saqlash
+  const saveTabName = (tabId: string) => {
+    setFileTabs((prev) => prev.map((tab) => {
+      if (tab.id === tabId) {
+        // Faqat asosiy nomni yangilash, extensionni saqlash
+        const ext = tab.name.endsWith('.jsonl') ? '.jsonl' : ''
+        return { ...tab, name: editingName + ext, hasUnsavedChanges: true }
+      }
+      return tab
+    }))
+    setEditingTabId(null)
+  }
+
   if (!mounted) {
     return null
   }
@@ -779,13 +794,60 @@ export default function JSONLChatEditor() {
               {/* File information */}
               <div className="mb-4 p-4 bg-white dark:bg-gray-800 rounded-lg shadow-sm border">
                 <h3 className="font-semibold mb-2">File information:</h3>
-                <p className="text-sm text-muted-foreground">
-                  📁 File name: {tab.name}
-                  <br />📊 Total blocks: {tab.blocks.length}
-                  <br />📝 Total messages: {tab.blocks.reduce((total, block) => total + block.messages.length, 0)}
-                  <br />
-                  {tab.hasUnsavedChanges && <span className="text-orange-500">⚠️ Unsaved changes</span>}
-                </p>
+                <div className="flex items-center gap-2 mb-1">
+                  <Folder className="w-4 h-4 text-muted-foreground" />
+                  <span className="text-sm text-muted-foreground">File name:</span>
+                  {editingTabId === tab.id ? (
+                    <>
+                      <input
+                        className="border rounded px-2 py-1 text-sm w-36 focus:outline-none focus:ring-2 focus:ring-green-500 bg-transparent dark:bg-gray-900"
+                        value={editingName}
+                        autoFocus
+                        onChange={e => setEditingName(e.target.value.replace(/[^a-zA-Z0-9_-]/g, ''))}
+                        onBlur={() => saveTabName(tab.id)}
+                        onKeyDown={e => {
+                          if (e.key === "Enter") saveTabName(tab.id)
+                          if (e.key === "Escape") setEditingTabId(null)
+                        }}
+                        maxLength={48}
+                      />
+                      <span className="ml-1 text-muted-foreground text-sm select-none">.jsonl</span>
+                      <button className="ml-1 text-green-600 hover:text-green-800" onClick={() => saveTabName(tab.id)}>
+                        <Check className="w-4 h-4" />
+                      </button>
+                      <button className="ml-1 text-gray-400 hover:text-red-500" onClick={() => setEditingTabId(null)}>
+                        <X className="w-4 h-4" />
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <span className="truncate max-w-xs inline-block align-middle">{tab.name}</span>
+                      <button
+                        className="ml-1 text-gray-400 hover:text-green-600"
+                        title="Edit file name"
+                        onClick={() => {
+                          setEditingTabId(tab.id)
+                          // Faqat asosiy nomni inputga joylash
+                          setEditingName(tab.name.replace(/\.jsonl$/, ""))
+                        }}
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </button>
+                    </>
+                  )}
+                </div>
+                <div className="text-sm text-muted-foreground flex items-center gap-2 mb-1">
+                  <LayoutGrid className="w-4 h-4 mr-1" /> Total blocks: {tab.blocks.length}
+                </div>
+                <div className="text-sm text-muted-foreground flex items-center gap-2 mb-1">
+                  <MessageSquare className="w-4 h-4 mr-1" /> Total messages: {tab.blocks.reduce((total, block) => total + block.messages.length, 0)}
+                </div>
+                {tab.hasUnsavedChanges && (
+                  <div className="text-sm text-orange-500 flex items-center gap-2 mt-1">
+                    <AlertTriangle className="w-4 h-4" />
+                    <span>Unsaved changes</span>
+                  </div>
+                )}
               </div>
 
               {/* Chat Blocks */}
