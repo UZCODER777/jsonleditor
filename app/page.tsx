@@ -42,7 +42,7 @@ interface MessageProps {
   copyToClipboard: (text: string) => void;
   deleteMessage: (blockId: string, messageIndex: number) => void;
 }
-const Message: React.FC<MessageProps> = React.memo(function Message({ blockId, message, messageIndex, copiedText, updateMessageRole, updateMessageContent, copyToClipboard, deleteMessage }) {
+const Message: React.FC<MessageProps & { addMessageAfter: (blockId: string, messageIndex: number) => void }> = React.memo(function Message({ blockId, message, messageIndex, copiedText, updateMessageRole, updateMessageContent, copyToClipboard, deleteMessage, addMessageAfter }) {
   // Rolga qarab rangli border/fon/badge
   let roleClass = "";
   if (message.role === "system") roleClass = "border-l-4 border-blue-400 bg-blue-50 dark:bg-blue-950/40";
@@ -66,13 +66,12 @@ const Message: React.FC<MessageProps> = React.memo(function Message({ blockId, m
               <SelectItem value="assistant">assistant</SelectItem>
             </SelectContent>
           </Select>
-          <span className={`px-2 py-0.5 rounded text-xs font-mono ${message.role === 'system' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-200' : message.role === 'user' ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-200' : 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-200'}`}>{message.role}</span>
           <Button
             variant="ghost"
             size="icon"
             onClick={() => copyToClipboard(message.content)}
             className="w-6 h-6 p-1 text-gray-400 opacity-60 hover:opacity-100 hover:text-blue-400 bg-transparent border-none shadow-none"
-            title="Add"
+            title="Copy"
           >
             {copiedText === message.content ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
           </Button>
@@ -84,6 +83,15 @@ const Message: React.FC<MessageProps> = React.memo(function Message({ blockId, m
             title="Delete"
           >
             <Trash2 className="w-4 h-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => addMessageAfter(blockId, messageIndex)}
+            className="w-6 h-6 p-1 text-gray-400 opacity-60 hover:opacity-100 hover:text-green-500 bg-transparent border-none shadow-none"
+            title="Add message after"
+          >
+            <Plus className="w-4 h-4" />
           </Button>
         </div>
       </div>
@@ -108,8 +116,10 @@ interface BlockProps {
   deleteMessage: (blockId: string, messageIndex: number) => void;
   addMessage: (blockId: string) => void;
   deleteBlock: (blockId: string) => void;
+  addNewBlockAfter: (blockId: string) => void;
+  addMessageAfter: (blockId: string, messageIndex: number) => void;
 }
-const Block: React.FC<BlockProps> = React.memo(function Block({ block, blockIndex, copiedText, updateMessageRole, updateMessageContent, copyToClipboard, deleteMessage, addMessage, deleteBlock }) {
+const Block: React.FC<BlockProps & { addNewBlockAfter: (blockId: string) => void }> = React.memo(function Block({ block, blockIndex, copiedText, updateMessageRole, updateMessageContent, copyToClipboard, deleteMessage, addMessage, deleteBlock, addNewBlockAfter, addMessageAfter }) {
   return (
     <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border">
       <div className="p-4 space-y-4">
@@ -124,18 +134,29 @@ const Block: React.FC<BlockProps> = React.memo(function Block({ block, blockInde
             updateMessageContent={updateMessageContent}
             copyToClipboard={copyToClipboard}
             deleteMessage={deleteMessage}
+            addMessageAfter={addMessageAfter}
           />
         ))}
       </div>
-      <div className="flex items-center justify-between p-4 border-t bg-gray-50 dark:bg-gray-700 rounded-b-lg">
-        <Button
-          onClick={() => addMessage(block.id)}
-          variant="outline"
-          size="sm"
-          className="bg-green-50 hover:bg-green-100 text-green-700 border-green-200"
-        >
-          <Plus className="w-4 h-4 mr-2" /> Add message
-        </Button>
+      <div className="flex items-center justify-between p-4 border-t bg-gray-50 dark:bg-gray-700 rounded-b-lg gap-2">
+        <div className="flex gap-2">
+          <Button
+            onClick={() => addMessage(block.id)}
+            variant="outline"
+            size="sm"
+            className="bg-green-50 hover:bg-green-100 text-green-700 border-green-200"
+          >
+            <Plus className="w-4 h-4 mr-2" /> Add message
+          </Button>
+          <Button
+            onClick={() => addNewBlockAfter(block.id)}
+            variant="outline"
+            size="sm"
+            className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
+          >
+            <Plus className="w-4 h-4 mr-2" /> Add block
+          </Button>
+        </div>
         <Button
           onClick={() => deleteBlock(block.id)}
           variant="outline"
@@ -382,7 +403,7 @@ export default function JSONLChatEditor() {
     [updateActiveTab],
   )
 
-  // Add new block
+  // Add new block to the end, always with 3 default messages
   const addNewBlock = useCallback(() => {
     const newBlock: ChatBlock = {
       id: generateId(),
@@ -391,13 +412,13 @@ export default function JSONLChatEditor() {
         { role: "user", content: "" },
         { role: "assistant", content: "" },
       ],
-    }
+    };
     updateActiveTab((tab) => ({
       ...tab,
       blocks: [...tab.blocks, newBlock],
       hasUnsavedChanges: true,
-    }))
-  }, [updateActiveTab])
+    }));
+  }, [updateActiveTab]);
 
   // Delete block
   const deleteBlock = useCallback(
@@ -410,6 +431,32 @@ export default function JSONLChatEditor() {
     },
     [updateActiveTab],
   )
+
+  // Add new block after a specific block
+  const addNewBlockAfter = useCallback((afterBlockId: string) => {
+    updateActiveTab((tab) => {
+      const newBlock: ChatBlock = {
+        id: generateId(),
+        messages: [
+          { role: "system", content: "" },
+          { role: "user", content: "" },
+          { role: "assistant", content: "" },
+        ],
+      };
+      const idx = tab.blocks.findIndex((b) => b.id === afterBlockId);
+      if (idx === -1) return tab;
+      const newBlocks = [
+        ...tab.blocks.slice(0, idx + 1),
+        newBlock,
+        ...tab.blocks.slice(idx + 1),
+      ];
+      return {
+        ...tab,
+        blocks: newBlocks,
+        hasUnsavedChanges: true,
+      };
+    });
+  }, [updateActiveTab]);
 
   // Parse JSONL content
   const parseJSONL = useCallback(
@@ -722,6 +769,26 @@ export default function JSONLChatEditor() {
     setEditingTabId(null)
   }
 
+  // JSONLChatEditor ichida yangi funksiya:
+  const addMessageAfter = useCallback((blockId: string, messageIndex: number) => {
+    updateActiveTab((tab) => ({
+      ...tab,
+      blocks: tab.blocks.map((block) =>
+        block.id === blockId
+          ? {
+            ...block,
+            messages: [
+              ...block.messages.slice(0, messageIndex + 1),
+              { role: "user", content: "" },
+              ...block.messages.slice(messageIndex + 1),
+            ],
+          }
+          : block
+      ),
+      hasUnsavedChanges: true,
+    }));
+  }, [updateActiveTab]);
+
   if (!mounted) {
     return null
   }
@@ -942,17 +1009,17 @@ export default function JSONLChatEditor() {
                       deleteMessage={deleteMessage}
                       addMessage={addMessage}
                       deleteBlock={deleteBlock}
+                      addNewBlockAfter={addNewBlockAfter}
+                      addMessageAfter={addMessageAfter}
                     />
                   ))}
-
-                  {/* Add New Block Button */}
+                  {/* Add new block button faqat bloklar ro'yxatining pastida */}
                   <div className="text-center">
                     <Button onClick={addNewBlock} className="bg-green-600 hover:bg-green-700 text-white">
                       <Plus className="w-4 h-4 mr-2" />
                       Add message block
                     </Button>
                   </div>
-
                   {tab.blocks.length === 0 && (
                     <div className="text-center py-12 text-muted-foreground">
                       <MessageSquare className="w-12 h-12 mx-auto mb-4 opacity-50" />
