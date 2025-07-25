@@ -10,13 +10,17 @@ import { Toaster } from "@/components/ui/toaster"
 import { useToast } from "@/hooks/use-toast"
 
 interface ChatMessage {
-  id: string
   role: "system" | "user" | "assistant"
   content: string
 }
 
+interface ChatBlock {
+  id: string
+  messages: ChatMessage[]
+}
+
 export default function JSONLChatEditor() {
-  const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [blocks, setBlocks] = useState<ChatBlock[]>([])
   const [fileInfo, setFileInfo] = useState<{ name: string } | null>(null)
   const [copiedText, setCopiedText] = useState<string | null>(null)
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
@@ -28,39 +32,93 @@ export default function JSONLChatEditor() {
 
   useEffect(() => {
     setMounted(true)
-    // Boshlang'ich xabarni yaratish
-    addNewMessage()
+    // Boshlang'ich blokni yaratish
+    addNewBlock()
   }, [])
 
   // Generate unique ID
-  const generateId = () => `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+  const generateId = () => `block_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
 
-  // Add new message
-  const addNewMessage = useCallback((role: "system" | "user" | "assistant" = "user") => {
-    const newMessage: ChatMessage = {
-      id: generateId(),
-      role,
-      content: "",
-    }
-    setMessages((prevMessages) => [...prevMessages, newMessage])
+  // Add new message to a block
+  const addMessage = useCallback((blockId: string, role: "system" | "user" | "assistant" = "user") => {
+    setBlocks((prevBlocks) =>
+      prevBlocks.map((block) =>
+        block.id === blockId
+          ? {
+              ...block,
+              messages: [...block.messages, { role, content: "" }],
+            }
+          : block,
+      ),
+    )
     setHasUnsavedChanges(true)
   }, [])
 
-  // Delete message
-  const deleteMessage = useCallback((messageId: string) => {
-    setMessages((prevMessages) => prevMessages.filter((msg) => msg.id !== messageId))
+  // Delete message from a block
+  const deleteMessage = useCallback((blockId: string, messageIndex: number) => {
+    setBlocks((prevBlocks) =>
+      prevBlocks.map((block) =>
+        block.id === blockId
+          ? {
+              ...block,
+              messages: block.messages.filter((_, index) => index !== messageIndex),
+            }
+          : block,
+      ),
+    )
     setHasUnsavedChanges(true)
   }, [])
 
   // Update message content
-  const updateMessageContent = useCallback((messageId: string, content: string) => {
-    setMessages((prevMessages) => prevMessages.map((msg) => (msg.id === messageId ? { ...msg, content } : msg)))
+  const updateMessageContent = useCallback((blockId: string, messageIndex: number, content: string) => {
+    setBlocks((prevBlocks) =>
+      prevBlocks.map((block) =>
+        block.id === blockId
+          ? {
+              ...block,
+              messages: block.messages.map((message, index) =>
+                index === messageIndex ? { ...message, content } : message,
+              ),
+            }
+          : block,
+      ),
+    )
     setHasUnsavedChanges(true)
   }, [])
 
   // Update message role
-  const updateMessageRole = useCallback((messageId: string, role: "system" | "user" | "assistant") => {
-    setMessages((prevMessages) => prevMessages.map((msg) => (msg.id === messageId ? { ...msg, role } : msg)))
+  const updateMessageRole = useCallback(
+    (blockId: string, messageIndex: number, role: "system" | "user" | "assistant") => {
+      setBlocks((prevBlocks) =>
+        prevBlocks.map((block) =>
+          block.id === blockId
+            ? {
+                ...block,
+                messages: block.messages.map((message, index) =>
+                  index === messageIndex ? { ...message, role } : message,
+                ),
+              }
+            : block,
+        ),
+      )
+      setHasUnsavedChanges(true)
+    },
+    [],
+  )
+
+  // Add new block
+  const addNewBlock = useCallback(() => {
+    const newBlock: ChatBlock = {
+      id: generateId(),
+      messages: [{ role: "user", content: "" }],
+    }
+    setBlocks((prevBlocks) => [...prevBlocks, newBlock])
+    setHasUnsavedChanges(true)
+  }, [])
+
+  // Delete block
+  const deleteBlock = useCallback((blockId: string) => {
+    setBlocks((prevBlocks) => prevBlocks.filter((block) => block.id !== blockId))
     setHasUnsavedChanges(true)
   }, [])
 
@@ -89,19 +147,28 @@ export default function JSONLChatEditor() {
           if (jsonData && typeof jsonData === "object" && Array.isArray(jsonData.messages)) {
             console.log("Messages array format detected with", jsonData.messages.length, "messages")
 
-            // Har bir xabar uchun alohida message yaratamiz
-            const newMessages: ChatMessage[] = jsonData.messages.map((msg: any) => ({
-              id: generateId(),
+            // Xabarlarni bloklarga ajratamiz (har 3 ta xabar = 1 blok)
+            const newBlocks: ChatBlock[] = []
+            const messages = jsonData.messages.map((msg: any) => ({
               role: msg.role || "user",
               content: typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content),
             }))
 
-            setMessages(newMessages)
+            // Xabarlarni 3 tadan guruhlash
+            for (let i = 0; i < messages.length; i += 3) {
+              const blockMessages = messages.slice(i, i + 3)
+              newBlocks.push({
+                id: generateId(),
+                messages: blockMessages,
+              })
+            }
+
+            setBlocks(newBlocks)
             setHasUnsavedChanges(false)
 
             toast({
               title: "Muvaffaqiyatli yuklandi",
-              description: `${jsonData.messages.length} ta xabar yuklandi`,
+              description: `${jsonData.messages.length} ta xabar, ${newBlocks.length} ta blokda yuklandi`,
             })
             return
           }
@@ -122,7 +189,6 @@ export default function JSONLChatEditor() {
             if (parsed && typeof parsed === "object") {
               if (parsed.role && parsed.content) {
                 parsedMessages.push({
-                  id: generateId(),
                   role: parsed.role as "system" | "user" | "assistant",
                   content: typeof parsed.content === "string" ? parsed.content : JSON.stringify(parsed.content),
                 })
@@ -131,7 +197,6 @@ export default function JSONLChatEditor() {
                 parsed.messages.forEach((msg: any) => {
                   if (msg.role && msg.content) {
                     parsedMessages.push({
-                      id: generateId(),
                       role: msg.role as "system" | "user" | "assistant",
                       content: typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content),
                     })
@@ -140,7 +205,6 @@ export default function JSONLChatEditor() {
               } else {
                 console.log(`Line ${i + 1} has invalid format:`, parsed)
                 parsedMessages.push({
-                  id: generateId(),
                   role: "user",
                   content: JSON.stringify(parsed),
                 })
@@ -149,7 +213,6 @@ export default function JSONLChatEditor() {
           } catch (lineError) {
             console.log(`Line ${i + 1} parsing error:`, lineError)
             parsedMessages.push({
-              id: generateId(),
               role: "user",
               content: line,
             })
@@ -160,11 +223,10 @@ export default function JSONLChatEditor() {
 
         if (parsedMessages.length === 0) {
           // Agar hech qanday xabar topilmasa, butun matnni bitta xabar sifatida ko'rsatamiz
-          setMessages([
+          setBlocks([
             {
               id: generateId(),
-              role: "user",
-              content: trimmedContent,
+              messages: [{ role: "user", content: trimmedContent }],
             },
           ])
 
@@ -176,12 +238,22 @@ export default function JSONLChatEditor() {
           return
         }
 
-        setMessages(parsedMessages)
+        // Xabarlarni bloklarga ajratamiz (har 3 ta xabar = 1 blok)
+        const newBlocks: ChatBlock[] = []
+        for (let i = 0; i < parsedMessages.length; i += 3) {
+          const blockMessages = parsedMessages.slice(i, i + 3)
+          newBlocks.push({
+            id: generateId(),
+            messages: blockMessages,
+          })
+        }
+
+        setBlocks(newBlocks)
         setHasUnsavedChanges(false)
 
         toast({
           title: "Muvaffaqiyatli yuklandi",
-          description: `${parsedMessages.length} ta xabar yuklandi`,
+          description: `${parsedMessages.length} ta xabar, ${newBlocks.length} ta blokda yuklandi`,
         })
       } catch (error) {
         console.error("General parsing error:", error)
@@ -192,11 +264,10 @@ export default function JSONLChatEditor() {
         })
 
         // Xato bo'lsa ham, asl matnni ko'rsatamiz
-        setMessages([
+        setBlocks([
           {
             id: generateId(),
-            role: "user",
-            content: content.substring(0, 1000) + (content.length > 1000 ? "..." : ""),
+            messages: [{ role: "user", content: content.substring(0, 1000) + (content.length > 1000 ? "..." : "") }],
           },
         ])
       }
@@ -285,10 +356,17 @@ export default function JSONLChatEditor() {
   const downloadFile = useCallback(
     (format: "jsonl" | "messages" = "jsonl") => {
       try {
-        // Faqat bo'sh bo'lmagan xabarlarni olish
-        const validMessages = messages.filter((msg) => msg.content.trim() !== "")
+        // Barcha xabarlarni yig'ish
+        const allMessages: ChatMessage[] = []
+        blocks.forEach((block) => {
+          block.messages.forEach((message) => {
+            if (message.content.trim() !== "") {
+              allMessages.push(message)
+            }
+          })
+        })
 
-        if (validMessages.length === 0) {
+        if (allMessages.length === 0) {
           toast({
             title: "Xabarlar yo'q",
             description: "Yuklab olish uchun kamida bitta xabar kiriting",
@@ -303,13 +381,13 @@ export default function JSONLChatEditor() {
         if (format === "messages") {
           // Messages array format
           const messagesObj = {
-            messages: validMessages.map(({ id, ...msg }) => msg), // id ni olib tashlaymiz
+            messages: allMessages,
           }
           content = JSON.stringify(messagesObj, null, 2)
           filename = fileInfo?.name?.replace(".jsonl", ".json") || "chat.json"
         } else {
           // JSONL format
-          content = validMessages.map(({ id, ...msg }) => JSON.stringify(msg)).join("\n")
+          content = allMessages.map((msg) => JSON.stringify(msg)).join("\n")
           filename = fileInfo?.name || "chat.jsonl"
         }
 
@@ -337,30 +415,26 @@ export default function JSONLChatEditor() {
         })
       }
     },
-    [messages, fileInfo, toast],
+    [blocks, fileInfo, toast],
   )
 
   // Test uchun sample data
   const loadSampleData = useCallback(() => {
-    const sampleMessages: ChatMessage[] = [
+    const sampleBlocks: ChatBlock[] = [
       {
         id: generateId(),
-        role: "system",
-        content: "Siz foydali AI yordamchisiz.",
-      },
-      {
-        id: generateId(),
-        role: "user",
-        content: "Salom! Qanday yordam bera olasiz?",
-      },
-      {
-        id: generateId(),
-        role: "assistant",
-        content:
-          "Salom! Men turli savollarga javob berish, matn yozish va boshqa vazifalarni bajarishda yordam bera olaman.",
+        messages: [
+          { role: "system", content: "Siz foydali AI yordamchisiz." },
+          { role: "user", content: "Salom! Qanday yordam bera olasiz?" },
+          {
+            role: "assistant",
+            content:
+              "Salom! Men turli savollarga javob berish, matn yozish va boshqa vazifalarni bajarishda yordam bera olaman.",
+          },
+        ],
       },
     ]
-    setMessages(sampleMessages)
+    setBlocks(sampleBlocks)
     setHasUnsavedChanges(true)
     toast({
       title: "Namuna yuklandi",
@@ -368,13 +442,13 @@ export default function JSONLChatEditor() {
     })
   }, [toast])
 
-  // Clear all messages
-  const clearAllMessages = useCallback(() => {
-    setMessages([])
+  // Clear all blocks
+  const clearAllBlocks = useCallback(() => {
+    setBlocks([])
     setHasUnsavedChanges(true)
     toast({
       title: "Tozalandi",
-      description: "Barcha xabarlar o'chirildi",
+      description: "Barcha bloklar o'chirildi",
     })
   }, [toast])
 
@@ -383,9 +457,9 @@ export default function JSONLChatEditor() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       {/* Header */}
-      <header className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-50">
+      <header className="border-b bg-white dark:bg-gray-800 shadow-sm sticky top-0 z-50">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
@@ -408,7 +482,7 @@ export default function JSONLChatEditor() {
             </Button>
 
             <Button
-              onClick={clearAllMessages}
+              onClick={clearAllBlocks}
               variant="outline"
               size="sm"
               className="text-red-500 hover:text-red-700 bg-transparent"
@@ -443,91 +517,141 @@ export default function JSONLChatEditor() {
       <main className="container mx-auto px-4 py-6">
         {/* Debug uchun fayl ma'lumotlarini ko'rsatish */}
         {fileInfo && (
-          <div className="mb-4 p-4 bg-muted/50 rounded-lg">
+          <div className="mb-4 p-4 bg-white dark:bg-gray-800 rounded-lg shadow-sm border">
             <h3 className="font-semibold mb-2">Fayl ma'lumotlari:</h3>
             <p className="text-sm text-muted-foreground">
               📁 Fayl nomi: {fileInfo.name}
-              <br />📝 Jami xabarlar: {messages.length}
+              <br />📊 Jami bloklar: {blocks.length}
+              <br />📝 Jami xabarlar: {blocks.reduce((total, block) => total + block.messages.length, 0)}
               <br />
               {hasUnsavedChanges && <span className="text-orange-500">⚠️ O'zgarishlar saqlanmagan</span>}
             </p>
           </div>
         )}
 
-        {/* Message Blocks */}
-        <div className="space-y-4">
-          {messages.map((message, index) => (
-            <div key={message.id} className="border rounded-lg p-4 bg-background shadow-sm">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-3">
-                  <span className="text-sm text-muted-foreground font-mono">#{index + 1}</span>
-                  <Select
-                    value={message.role}
-                    onValueChange={(value: "system" | "user" | "assistant") => updateMessageRole(message.id, value)}
-                  >
-                    <SelectTrigger className="w-32">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="system">system</SelectItem>
-                      <SelectItem value="user">user</SelectItem>
-                      <SelectItem value="assistant">assistant</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+        {/* Chat Blocks */}
+        <div className="space-y-6">
+          {blocks.map((block, blockIndex) => (
+            <div key={block.id} className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border">
+              {/* Block Header */}
+              <div className="flex items-center justify-between p-4 border-b bg-gray-50 dark:bg-gray-700 rounded-t-lg">
+                <Button
+                  onClick={() => addMessage(block.id)}
+                  variant="outline"
+                  size="sm"
+                  className="bg-green-50 hover:bg-green-100 text-green-700 border-green-200"
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add message
+                </Button>
 
-                <div className="flex gap-2">
-                  <Button variant="ghost" size="sm" onClick={() => copyToClipboard(message.content)}>
-                    {copiedText === message.content ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                  </Button>
-
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => deleteMessage(message.id)}
-                    className="text-red-500 hover:text-red-700"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </Button>
-                </div>
+                <Button
+                  onClick={() => deleteBlock(block.id)}
+                  variant="outline"
+                  size="sm"
+                  className="bg-red-50 hover:bg-red-100 text-red-700 border-red-200"
+                >
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Delete block
+                </Button>
               </div>
 
-              <Textarea
-                value={message.content}
-                onChange={(e) => updateMessageContent(message.id, e.target.value)}
-                placeholder={`${message.role} xabarini kiriting...`}
-                className={`min-h-[120px] resize-none whitespace-pre-wrap font-mono text-sm ${
-                  message.role === "system"
-                    ? "bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800"
-                    : message.role === "user"
-                      ? "bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800"
-                      : "bg-purple-50 dark:bg-purple-900/20 border-purple-200 dark:border-purple-800"
-                }`}
-              />
+              {/* Messages in Block */}
+              <div className="p-4 space-y-4">
+                {block.messages.map((message, messageIndex) => (
+                  <div key={`${block.id}_${messageIndex}`} className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Select
+                        value={message.role}
+                        onValueChange={(value: "system" | "user" | "assistant") =>
+                          updateMessageRole(block.id, messageIndex, value)
+                        }
+                      >
+                        <SelectTrigger className="w-32">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="system">system</SelectItem>
+                          <SelectItem value="user">user</SelectItem>
+                          <SelectItem value="assistant">assistant</SelectItem>
+                        </SelectContent>
+                      </Select>
+
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => copyToClipboard(message.content)}
+                          className="bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
+                        >
+                          {copiedText === message.content ? (
+                            <Check className="w-4 h-4" />
+                          ) : (
+                            <Copy className="w-4 h-4" />
+                          )}
+                          Add
+                        </Button>
+
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => deleteMessage(block.id, messageIndex)}
+                          className="bg-red-50 hover:bg-red-100 text-red-700 border-red-200"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                          Delete
+                        </Button>
+                      </div>
+                    </div>
+
+                    <Textarea
+                      value={message.content}
+                      onChange={(e) => updateMessageContent(block.id, messageIndex, e.target.value)}
+                      placeholder={`${message.role} xabarini kiriting...`}
+                      className="min-h-[80px] resize-none font-mono text-sm"
+                    />
+                  </div>
+                ))}
+              </div>
+
+              {/* Block Footer */}
+              <div className="flex items-center justify-between p-4 border-t bg-gray-50 dark:bg-gray-700 rounded-b-lg">
+                <Button
+                  onClick={() => addMessage(block.id)}
+                  variant="outline"
+                  size="sm"
+                  className="bg-green-50 hover:bg-green-100 text-green-700 border-green-200"
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add message
+                </Button>
+
+                <Button
+                  onClick={() => deleteBlock(block.id)}
+                  variant="outline"
+                  size="sm"
+                  className="bg-red-50 hover:bg-red-100 text-red-700 border-red-200"
+                >
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Delete block
+                </Button>
+              </div>
             </div>
           ))}
 
-          {/* Add new message buttons */}
-          <div className="flex flex-wrap gap-2 justify-center pt-4">
-            <Button onClick={() => addNewMessage("system")} variant="outline" size="sm">
+          {/* Add New Block Button */}
+          <div className="text-center">
+            <Button onClick={addNewBlock} className="bg-green-600 hover:bg-green-700 text-white">
               <Plus className="w-4 h-4 mr-2" />
-              System xabar
-            </Button>
-            <Button onClick={() => addNewMessage("user")} variant="outline" size="sm">
-              <Plus className="w-4 h-4 mr-2" />
-              User xabar
-            </Button>
-            <Button onClick={() => addNewMessage("assistant")} variant="outline" size="sm">
-              <Plus className="w-4 h-4 mr-2" />
-              Assistant xabar
+              Add message block
             </Button>
           </div>
 
-          {messages.length === 0 && (
+          {blocks.length === 0 && (
             <div className="text-center py-12 text-muted-foreground">
               <MessageSquare className="w-12 h-12 mx-auto mb-4 opacity-50" />
-              <p className="text-lg mb-2">Hech qanday xabar yo'q</p>
-              <p className="text-sm">Yuqoridagi tugmalardan birini bosib yangi xabar qo'shing</p>
+              <p className="text-lg mb-2">Hech qanday blok yo'q</p>
+              <p className="text-sm">Yuqoridagi tugmani bosib yangi blok qo'shing</p>
             </div>
           )}
         </div>
