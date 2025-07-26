@@ -3,7 +3,7 @@
 import React, { useMemo } from "react"
 
 import { useState, useCallback, useRef, useEffect } from "react"
-import { Plus, Trash2, Download, Upload, Save, Moon, Sun, Copy, Check, MessageSquare, X, FileText, Loader2, Pencil, Folder, LayoutGrid, AlertTriangle } from "lucide-react"
+import { Plus, Trash2, Download, Upload, Save, Moon, Sun, Copy, Check, MessageSquare, X, FileText, Loader2, Pencil, Folder, LayoutGrid, AlertTriangle, GripVertical, Beaker, Trash, Circle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -263,14 +263,108 @@ return blocks.map(block => ({
   const [customCodeError, setCustomCodeError] = useState<string | null>(null);
   const [isRunningCustomCode, setIsRunningCustomCode] = useState(false);
 
+  // Auto-save settings
+  const [autoSave, setAutoSave] = useState<boolean>(false);
+
+  const toggleAutoSave = useCallback(() => {
+    const newAutoSave = !autoSave
+    setAutoSave(newAutoSave)
+    localStorage.setItem('jsonl-editor-auto-save', JSON.stringify(newAutoSave))
+    toast({
+      title: newAutoSave ? "Auto-save enabled" : "Auto-save disabled",
+      description: newAutoSave ? "Changes will be saved automatically" : "Changes will be saved manually",
+    })
+  }, [autoSave, toast])
+
+  // Resizable sidebar
+  const [sidebarWidth, setSidebarWidth] = useState<number>(384); // Default 384px (w-96)
+  const [isResizing, setIsResizing] = useState<boolean>(false);
+  const sidebarRef = useRef<HTMLDivElement>(null);
+  const resizeRef = useRef<HTMLDivElement>(null);
+
+  // Load saved sidebar width
+  useEffect(() => {
+    const savedWidth = localStorage.getItem('jsonl-editor-sidebar-width')
+    if (savedWidth) {
+      setSidebarWidth(parseInt(savedWidth))
+    }
+  }, [])
+
+  // Save sidebar width
+  const saveSidebarWidth = useCallback((width: number) => {
+    localStorage.setItem('jsonl-editor-sidebar-width', width.toString())
+  }, [])
+
+  // Resize handlers
+  const startResize = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    setIsResizing(true)
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+  }, [])
+
+  const stopResize = useCallback(() => {
+    setIsResizing(false)
+    document.body.style.cursor = ''
+    document.body.style.userSelect = ''
+  }, [])
+
+  const resize = useCallback((e: MouseEvent) => {
+    if (!isResizing || !sidebarRef.current) return
+
+    const container = sidebarRef.current.parentElement
+    if (!container) return
+
+    const containerRect = container.getBoundingClientRect()
+    const newWidth = containerRect.right - e.clientX
+
+    // Min and max constraints
+    const minWidth = 280 // Minimum width
+    const maxWidth = 600 // Maximum width
+
+    if (newWidth >= minWidth && newWidth <= maxWidth) {
+      setSidebarWidth(newWidth)
+      saveSidebarWidth(newWidth)
+    }
+  }, [isResizing, saveSidebarWidth])
+
+  // Add/remove resize event listeners
+  useEffect(() => {
+    if (isResizing) {
+      document.addEventListener('mousemove', resize)
+      document.addEventListener('mouseup', stopResize)
+    }
+
+    return () => {
+      document.removeEventListener('mousemove', resize)
+      document.removeEventListener('mouseup', stopResize)
+    }
+  }, [isResizing, resize, stopResize])
+
   useEffect(() => {
     setMounted(true)
-    // Create new tab
-    createNewTab("default.jsonl")
+    // Load saved files from localStorage
+    loadFilesFromStorage()
+    // Load auto-save settings
+    const savedAutoSave = localStorage.getItem('jsonl-editor-auto-save')
+    if (savedAutoSave !== null) {
+      setAutoSave(JSON.parse(savedAutoSave))
+    }
   }, [])
 
   // Generate unique ID
-  const generateId = () => `id_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+  const generateId = useCallback(() => `id_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`, [])
+
+  // localStorage utility functions
+  const STORAGE_KEY = 'jsonl-editor-files'
+
+  const saveFilesToStorage = useCallback((files: FileTab[]) => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(files))
+    } catch (error) {
+      console.error('Failed to save files to localStorage:', error)
+    }
+  }, [])
 
   // Create new tab
   const createNewTab = useCallback((name: string) => {
@@ -289,9 +383,37 @@ return blocks.map(block => ({
       ],
       hasUnsavedChanges: false,
     }
-    setFileTabs((prev) => [...prev, newTab])
+    setFileTabs((prev) => {
+      const newTabs = [...prev, newTab]
+      // Auto-save new tabs to localStorage
+      saveFilesToStorage(newTabs)
+      return newTabs
+    })
     setActiveTabId(newTab.id)
-  }, [])
+  }, [saveFilesToStorage, generateId])
+
+  const loadFilesFromStorage = useCallback(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY)
+      if (saved) {
+        const parsedFiles = JSON.parse(saved) as FileTab[]
+        setFileTabs(parsedFiles)
+        if (parsedFiles.length > 0) {
+          setActiveTabId(parsedFiles[0].id)
+        } else {
+          // If no saved files, create a default one
+          createNewTab("default.jsonl")
+        }
+      } else {
+        // If no saved files, create a default one
+        createNewTab("default.jsonl")
+      }
+    } catch (error) {
+      console.error('Failed to load files from localStorage:', error)
+      // If error loading, create a default file
+      createNewTab("default.jsonl")
+    }
+  }, [createNewTab, generateId])
 
   // Close tab
   const closeTab = useCallback(
@@ -312,17 +434,21 @@ return blocks.map(block => ({
             hasUnsavedChanges: false,
           }
           setActiveTabId(newTab.id)
-          return [newTab]
+          const finalTabs = [newTab]
+          saveFilesToStorage(finalTabs)
+          return finalTabs
         } else {
           // If the tab being closed is active, activate the next one
           if (tabId === activeTabId) {
             setActiveTabId(newTabs[0].id)
           }
+          // Auto-save when closing tabs
+          saveFilesToStorage(newTabs)
           return newTabs
         }
       })
     },
-    [activeTabId],
+    [activeTabId, saveFilesToStorage, generateId],
   )
 
   // Get active tab
@@ -331,9 +457,16 @@ return blocks.map(block => ({
   // Update active tab
   const updateActiveTab = useCallback(
     (updater: (tab: FileTab) => FileTab) => {
-      setFileTabs((prev) => prev.map((tab) => (tab.id === activeTabId ? updater(tab) : tab)))
+      setFileTabs((prev) => {
+        const newTabs = prev.map((tab) => (tab.id === activeTabId ? updater(tab) : tab))
+        // Auto-save if enabled
+        if (autoSave) {
+          saveFilesToStorage(newTabs)
+        }
+        return newTabs
+      })
     },
-    [activeTabId],
+    [activeTabId, autoSave, saveFilesToStorage],
   )
 
   // Add new message to a block
@@ -555,7 +688,12 @@ return blocks.map(block => ({
           hasUnsavedChanges: false,
         }
 
-        setFileTabs((prev) => [...prev, newTab])
+        setFileTabs((prev) => {
+          const newTabs = [...prev, newTab]
+          // Auto-save uploaded files to localStorage
+          saveFilesToStorage(newTabs)
+          return newTabs
+        })
         setActiveTabId(newTab.id)
 
         toast({
@@ -571,7 +709,7 @@ return blocks.map(block => ({
         })
       }
     },
-    [toast],
+    [toast, generateId, saveFilesToStorage],
   )
 
   // File upload handler
@@ -719,12 +857,11 @@ return blocks.map(block => ({
         document.body.removeChild(a)
         URL.revokeObjectURL(url)
 
-        // Mark tab as saved
-        updateActiveTab((tab) => ({ ...tab, hasUnsavedChanges: false }))
+        // Note: Download doesn't mark as saved anymore, use Save button for that
 
         toast({
-          title: "Success",
-          description: `${filename} downloaded`,
+          title: "Downloaded",
+          description: `${filename} has been downloaded`,
         })
       } catch (error) {
         console.error("Error downloading file:", error)
@@ -760,27 +897,35 @@ return blocks.map(block => ({
     updateActiveTab((tab) => ({
       ...tab,
       blocks: sampleBlocks,
-      hasUnsavedChanges: true,
+      hasUnsavedChanges: !autoSave, // If auto-save is on, mark as saved
     }))
+    // Auto-save is handled by updateActiveTab if enabled
 
     toast({
       title: "Sample data loaded",
       description: "Sample data loaded for testing",
     })
-  }, [activeTab, updateActiveTab, toast])
+  }, [activeTab, updateActiveTab, toast, generateId])
 
   // Fayl nomini saqlash
-  const saveTabName = (tabId: string) => {
-    setFileTabs((prev) => prev.map((tab) => {
-      if (tab.id === tabId) {
-        // Faqat asosiy nomni yangilash, extensionni saqlash
-        const ext = tab.name.endsWith('.jsonl') ? '.jsonl' : ''
-        return { ...tab, name: editingName + ext, hasUnsavedChanges: true }
+  const saveTabName = useCallback((tabId: string) => {
+    setFileTabs((prev) => {
+      const newTabs = prev.map((tab) => {
+        if (tab.id === tabId) {
+          // Faqat asosiy nomni yangilash, extensionni saqlash
+          const ext = tab.name.endsWith('.jsonl') ? '.jsonl' : ''
+          return { ...tab, name: editingName + ext, hasUnsavedChanges: true }
+        }
+        return tab
+      })
+      // Auto-save if enabled
+      if (autoSave) {
+        saveFilesToStorage(newTabs)
       }
-      return tab
-    }))
+      return newTabs
+    })
     setEditingTabId(null)
-  }
+  }, [autoSave, saveFilesToStorage, editingName])
 
   // JSONLChatEditor ichida yangi funksiya:
   const addMessageAfter = useCallback((blockId: string, messageIndex: number) => {
@@ -813,7 +958,8 @@ return blocks.map(block => ({
       const fn = new Function('blocks', customCode);
       const result = fn(blocksCopy);
       if (Array.isArray(result)) {
-        updateActiveTab(tab => ({ ...tab, blocks: result, hasUnsavedChanges: true }));
+        updateActiveTab(tab => ({ ...tab, blocks: result, hasUnsavedChanges: !autoSave })); // If auto-save is on, mark as saved
+        // Auto-save is handled by updateActiveTab if enabled
         toast({ title: "Success", description: "Custom code applied to blocks." });
       } else {
         setCustomCodeError("Your code must return an array of blocks.");
@@ -831,44 +977,54 @@ return blocks.map(block => ({
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      {/* Sticky warning banner: test mode */}
-      <div className="sticky top-0 z-50 w-full">
-        <div className="bg-gradient-to-r from-yellow-300 to-yellow-400 text-yellow-900 font-semibold text-center py-2 shadow-md border-b border-yellow-400">
-          ⚠️ Ushbu sayt <span className="font-bold">TEST REJIMIDA</span> ishlamoqda. Ma'lumotlar vaqtincha saqlanadi va xatoliklar bo'lishi mumkin.<br />
-          <span className="text-sm font-normal">Aloqa uchun:
-            <a
-              href="https://t.me/shohjahon_asqarov"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="underline hover:text-blue-700 transition-colors"
-            >
-              Telegram: @shohjahon_asqarov
-            </a>
-          </span>
-        </div>
-      </div>
+
       {/* Header */}
-      <header className="border-b bg-white dark:bg-gray-800 shadow-sm sticky top-[48px] z-40">
+      <header className="border-b bg-white dark:bg-gray-800 shadow-sm sticky top-0 z-40">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
               <MessageSquare className="w-4 h-4 text-primary-foreground" />
             </div>
             <div>
-              <h1 className="text-xl md:text-2xl font-bold">JSONL Chat Editor</h1>
-              <p className="text-xs text-muted-foreground">{fileTabs.length} open files</p>
+              <h1 className="text-xl md:text-2xl font-bold">JSONL Editor</h1>
+              <p className="text-xs text-muted-foreground flex items-center gap-1">
+                <span>{fileTabs.length} open file{fileTabs.length !== 1 ? 's' : ''}</span>
+                <Circle className="w-1 h-1 fill-current" />
+                <span>{autoSave ? 'Auto-save enabled' : 'Manual save required'}</span>
+              </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
-          
+
             <Button onClick={() => createNewTab("default.jsonl")} variant="outline" size="sm">
               <Plus className="w-4 h-4 mr-2" />
-              New Tab
+              New File
             </Button>
 
             <Button onClick={loadSampleData} variant="outline" size="sm">
-              🧪 Test Data
+              <Beaker className="w-4 h-4 mr-2" />
+              Test Data
+            </Button>
+
+            <Button
+              onClick={() => {
+                if (confirm('Are you sure you want to clear all saved files? This action cannot be undone.')) {
+                  localStorage.removeItem(STORAGE_KEY)
+                  setFileTabs([])
+                  createNewTab("default.jsonl")
+                  toast({
+                    title: "Data cleared",
+                    description: "All saved files have been cleared",
+                  })
+                }
+              }}
+              variant="outline"
+              size="sm"
+              className="text-red-600 hover:text-red-700 border-red-200 hover:border-red-300"
+            >
+              <Trash className="w-4 h-4 mr-2" />
+              Clear Data
             </Button>
 
             <Button
@@ -928,9 +1084,19 @@ return blocks.map(block => ({
               </div>
             )}
 
-            <Button onClick={() => downloadFile("jsonl")} variant="default" size="sm" className="bg-green-600 hover:bg-green-700 text-white flex items-center gap-2">
+            <Button
+              onClick={toggleAutoSave}
+              variant={autoSave ? "default" : "outline"}
+              size="sm"
+              className={`flex items-center gap-2 ${autoSave ? 'bg-green-600 hover:bg-green-700 text-white' : 'text-green-600 hover:text-green-700 border-green-200 hover:border-green-300'}`}
+            >
+              <Save className="w-4 h-4" />
+              Auto-save {autoSave ? 'ON' : 'OFF'}
+            </Button>
+
+            <Button onClick={() => downloadFile("jsonl")} variant="outline" size="sm" className="flex items-center gap-2">
               <Download className="w-4 h-4" />
-              JSONL
+              Download JSONL
             </Button>
 
             <Button variant="ghost" size="icon" onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>
@@ -943,193 +1109,225 @@ return blocks.map(block => ({
       </header>
 
       <main className="container mx-auto px-4 py-6">
-        {/* --- Run Custom Code Panel --- */}
-        <div className="mb-8">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border p-4">
-            <h2 className="text-lg font-semibold mb-2">Run Custom Code</h2>
-            <p className="text-xs text-muted-foreground mb-2">You can use the <code>blocks</code> variable to manipulate all blocks. Your code must return a new array of blocks.</p>
-            <div className="mb-2">
-              <MonacoEditor
-                height="240px"
-                defaultLanguage="javascript"
-                theme="vs-dark"
-                value={customCode}
-                onChange={(v: string | undefined) => setCustomCode(v || "")}
-                options={{
-                  minimap: { enabled: false },
-                  fontSize: 14,
-                  fontFamily: 'Fira Mono, monospace',
-                  wordWrap: 'on',
-                  scrollBeyondLastLine: false,
-                  lineNumbers: "on",
-                }}
-              />
-            </div>
-            {/* Custom code usage guide */}
-            <div className="mb-4 p-3 rounded bg-muted/40 text-xs text-muted-foreground">
-              <b>How to use:</b>
-              <ul className="list-disc ml-5 mt-1 space-y-1">
-                <li><b>blocks</b> is an array of all blocks. Each block has <b>id</b> and <b>messages</b> (array).</li>
-                <li>Each <b>message</b> has <b>role</b> (system/user/assistant) and <b>content</b> (string).</li>
-                <li>Your code <b>must return a new array of blocks</b> (use <code>return ...</code>).</li>
-                <li>You can use <code>map</code>, <code>filter</code>, <code>forEach</code> and all JS array methods.</li>
-                <li><b>Do not use</b> async code, network requests, or browser APIs (window, document, etc).</li>
-                <li>Example: <code>return blocks.map(block =&gt; ...)</code></li>
-                <li>Invalid code or non-array return will show an error.</li>
-              </ul>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button onClick={runCustomCode} disabled={isRunningCustomCode} className="bg-blue-600 hover:bg-blue-700 text-white">
-                {isRunningCustomCode ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-                Run
-              </Button>
-              {customCodeError && <span className="text-red-500 text-xs ml-2">{customCodeError}</span>}
-            </div>
-          </div>
-        </div>
-        {/* --- End Custom Code Panel --- */}
-        <Tabs value={activeTabId} onValueChange={setActiveTabId} className="w-full">
-          {/* Tab Headers */}
-          <TabsList className="flex w-full gap-2 bg-transparent mb-6 justify-start">
-            {fileTabs.map((tab) => (
-              <div key={tab.id} className="flex items-center">
-                <TabsTrigger
-                  value={tab.id}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors
+        <div className="flex gap-6">
+          {/* Main content */}
+          <div className="flex-1">
+            <Tabs value={activeTabId} onValueChange={setActiveTabId} className="w-full">
+              {/* Tab Headers */}
+              <TabsList className="flex w-full gap-2 bg-transparent mb-6 justify-start">
+                {fileTabs.map((tab) => (
+                  <div key={tab.id} className="flex items-center">
+                    <TabsTrigger
+                      value={tab.id}
+                      className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors
                     ${activeTabId === tab.id
-                      ? "bg-green-600 text-white shadow border border-green-700"
-                      : "hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200"}`}
-                >
-                  <FileText className="w-4 h-4" />
-                  <span className="truncate">{tab.name}</span>
-                  {tab.hasUnsavedChanges && <span className="ml-1 w-2 h-2 bg-orange-500 rounded-full" />}
-                </TabsTrigger>
-                {fileTabs.length > 1 && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => closeTab(tab.id)}
-                    className="ml-1 h-6 w-6 p-0 text-gray-400 hover:text-red-500"
-                  >
-                    <X className="w-3 h-3" />
-                  </Button>
-                )}
-              </div>
-            ))}
-          </TabsList>
-
-          {/* Tab Contents */}
-          {fileTabs.map((tab) => (
-            <TabsContent key={tab.id} value={tab.id} className="mt-0">
-              <div className="flex flex-col gap-4 w-full"> {/* Block container boshlandi */}
-                {/* File information */}
-                <div className="mb-4 p-4 bg-white dark:bg-gray-800 rounded-lg shadow-sm border">
-                  <h3 className="font-semibold mb-2">File information:</h3>
-                  <div className="flex items-center gap-2 mb-1">
-                    <Folder className="w-4 h-4 text-muted-foreground" />
-                    <span className="text-sm text-muted-foreground">File name:</span>
-                    {editingTabId === tab.id ? (
-                      <>
-                        <input
-                          className="border rounded px-2 py-1 text-sm w-36 focus:outline-none focus:ring-2 focus:ring-green-500 bg-transparent dark:bg-gray-900"
-                          value={editingName}
-                          autoFocus
-                          onChange={e => setEditingName(e.target.value.replace(/[^a-zA-Z0-9_-]/g, ''))}
-                          onBlur={() => saveTabName(tab.id)}
-                          onKeyDown={e => {
-                            if (e.key === "Enter") saveTabName(tab.id)
-                            if (e.key === "Escape") setEditingTabId(null)
-                          }}
-                          maxLength={48}
-                        />
-                        <span className="ml-1 text-muted-foreground text-sm select-none">.jsonl</span>
-                        <button className="ml-1 text-green-600 hover:text-green-800" onClick={() => saveTabName(tab.id)}>
-                          <Check className="w-4 h-4" />
-                        </button>
-                        <button className="ml-1 text-gray-400 hover:text-red-500" onClick={() => setEditingTabId(null)}>
-                          <X className="w-4 h-4" />
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        <span className="truncate max-w-xs inline-block align-middle">{tab.name}</span>
-                        <button
-                          className="ml-1 text-gray-400 hover:text-green-600"
-                          title="Edit file name"
-                          onClick={() => {
-                            setEditingTabId(tab.id)
-                            // Faqat asosiy nomni inputga joylash
-                            setEditingName(tab.name.replace(/\.jsonl$/, ""))
-                          }}
-                        >
-                          <Pencil className="w-4 h-4" />
-                        </button>
-                      </>
+                          ? "bg-green-600 text-white shadow border border-green-700"
+                          : "hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200"}`}
+                    >
+                      <FileText className="w-4 h-4" />
+                      <span className="truncate">{tab.name}</span>
+                      {tab.hasUnsavedChanges && <span className="ml-1 w-2 h-2 bg-orange-500 rounded-full" />}
+                    </TabsTrigger>
+                    {fileTabs.length > 1 && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => closeTab(tab.id)}
+                        className="ml-1 h-6 w-6 p-0 text-gray-400 hover:text-red-500"
+                      >
+                        <X className="w-3 h-3" />
+                      </Button>
                     )}
                   </div>
-                  <div className="text-sm text-muted-foreground flex items-center gap-2 mb-1">
-                    <LayoutGrid className="w-4 h-4 mr-1" /> Total blocks: {tab.blocks.length}
-                  </div>
-                  <div className="text-sm text-muted-foreground flex items-center gap-2 mb-1">
-                    <MessageSquare className="w-4 h-4 mr-1" /> Total messages: {tab.blocks.reduce((total, block) => total + block.messages.length, 0)}
-                  </div>
-                  {tab.hasUnsavedChanges && (
-                    <div className="text-sm text-orange-500 flex items-center gap-2 mt-1">
-                      <AlertTriangle className="w-4 h-4" />
-                      <span>Unsaved changes</span>
-                      <button
-                        className="ml-2 px-3 py-1 bg-green-600 hover:bg-green-700 text-white rounded flex items-center gap-1 text-xs font-semibold shadow"
-                        onClick={() => {
-                          downloadFile("jsonl", tab)
-                          setFileTabs((prev) => prev.map(t => t.id === tab.id ? { ...t, hasUnsavedChanges: false } : t))
-                        }}
-                        title="Save changes"
-                      >
-                        <Download className="w-4 h-4" /> Save
-                      </button>
-                    </div>
-                  )}
-                </div>
-                {/* Preview bo'limi */}
-                <JsonlPreview tab={tab} />
+                ))}
+              </TabsList>
 
-                {/* Chat Blocks */}
-                <div className="space-y-6">
-                  {tab.blocks.map((block, blockIndex) => (
-                    <Block
-                      key={block.id}
-                      block={block}
-                      blockIndex={blockIndex}
-                      copiedText={copiedText}
-                      updateMessageRole={updateMessageRole}
-                      updateMessageContent={updateMessageContent}
-                      copyToClipboard={copyToClipboard}
-                      deleteMessage={deleteMessage}
-                      addMessage={addMessage}
-                      deleteBlock={deleteBlock}
-                      addNewBlockAfter={addNewBlockAfter}
-                      addMessageAfter={addMessageAfter}
-                    />
-                  ))}
-                  {/* Add new block button faqat bloklar ro'yxatining pastida */}
-                  <div className="text-center">
-                    <Button onClick={addNewBlock} className="bg-green-600 hover:bg-green-700 text-white">
-                      <Plus className="w-4 h-4 mr-2" />
-                      Add message block
-                    </Button>
-                  </div>
-                  {tab.blocks.length === 0 && (
-                    <div className="text-center py-12 text-muted-foreground">
-                      <MessageSquare className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                      <p className="text-lg mb-2">No blocks yet</p>
-                      <p className="text-sm">Click the button above to add a new block</p>
+              {/* Tab Contents */}
+              {fileTabs.map((tab) => (
+                <TabsContent key={tab.id} value={tab.id} className="mt-0">
+                  <div className="flex flex-col gap-4 w-full"> {/* Block container boshlandi */}
+                    {/* File information */}
+                    <div className="mb-4 p-4 bg-white dark:bg-gray-800 rounded-lg shadow-sm border">
+                      <h3 className="font-semibold mb-2">File information:</h3>
+                      <div className="flex items-center gap-2 mb-1">
+                        <Folder className="w-4 h-4 text-muted-foreground" />
+                        <span className="text-sm text-muted-foreground">File name:</span>
+                        {editingTabId === tab.id ? (
+                          <>
+                            <input
+                              className="border rounded px-2 py-1 text-sm w-36 focus:outline-none focus:ring-2 focus:ring-green-500 bg-transparent dark:bg-gray-900"
+                              value={editingName}
+                              autoFocus
+                              onChange={e => setEditingName(e.target.value.replace(/[^a-zA-Z0-9_-]/g, ''))}
+                              onBlur={() => saveTabName(tab.id)}
+                              onKeyDown={e => {
+                                if (e.key === "Enter") saveTabName(tab.id)
+                                if (e.key === "Escape") setEditingTabId(null)
+                              }}
+                              maxLength={48}
+                            />
+                            <span className="ml-1 text-muted-foreground text-sm select-none">.jsonl</span>
+                            <button className="ml-1 text-green-600 hover:text-green-800" onClick={() => saveTabName(tab.id)}>
+                              <Check className="w-4 h-4" />
+                            </button>
+                            <button className="ml-1 text-gray-400 hover:text-red-500" onClick={() => setEditingTabId(null)}>
+                              <X className="w-4 h-4" />
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <span className="truncate max-w-xs inline-block align-middle">{tab.name}</span>
+                            <button
+                              className="ml-1 text-gray-400 hover:text-green-600"
+                              title="Edit file name"
+                              onClick={() => {
+                                setEditingTabId(tab.id)
+                                // Faqat asosiy nomni inputga joylash
+                                setEditingName(tab.name.replace(/\.jsonl$/, ""))
+                              }}
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                      <div className="text-sm text-muted-foreground flex items-center gap-2 mb-1">
+                        <LayoutGrid className="w-4 h-4 mr-1" /> Total blocks: {tab.blocks.length}
+                      </div>
+                      <div className="text-sm text-muted-foreground flex items-center gap-2 mb-1">
+                        <MessageSquare className="w-4 h-4 mr-1" /> Total messages: {tab.blocks.reduce((total, block) => total + block.messages.length, 0)}
+                      </div>
+                      {tab.hasUnsavedChanges && !autoSave && (
+                        <div className="text-sm text-orange-500 flex items-center gap-2 mt-1">
+                          <AlertTriangle className="w-4 h-4" />
+                          <span>Unsaved changes</span>
+                          <button
+                            className="ml-2 px-3 py-1 bg-green-600 hover:bg-green-700 text-white rounded flex items-center gap-1 text-xs font-semibold shadow"
+                            onClick={() => {
+                              // Save to localStorage and mark as saved
+                              setFileTabs((prev) => {
+                                const newTabs = prev.map(t => t.id === tab.id ? { ...t, hasUnsavedChanges: false } : t)
+                                saveFilesToStorage(newTabs)
+                                return newTabs
+                              })
+                              toast({
+                                title: "Saved",
+                                description: "Changes saved to browser storage",
+                              })
+                            }}
+                            title="Save changes to browser"
+                          >
+                            <Save className="w-4 h-4" /> Save
+                          </button>
+                        </div>
+                      )}
+                      {tab.hasUnsavedChanges && autoSave && (
+                        <div className="text-sm text-green-500 flex items-center gap-2 mt-1">
+                          <Check className="w-4 h-4" />
+                          <span>Auto-saved</span>
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-              </div> {/* Block container tugadi */}
-            </TabsContent>
-          ))}
-        </Tabs>
+                    {/* Preview bo'limi */}
+                    <JsonlPreview tab={tab} />
+
+                    {/* Chat Blocks */}
+                    <div className="space-y-6">
+                      {tab.blocks.map((block, blockIndex) => (
+                        <Block
+                          key={block.id}
+                          block={block}
+                          blockIndex={blockIndex}
+                          copiedText={copiedText}
+                          updateMessageRole={updateMessageRole}
+                          updateMessageContent={updateMessageContent}
+                          copyToClipboard={copyToClipboard}
+                          deleteMessage={deleteMessage}
+                          addMessage={addMessage}
+                          deleteBlock={deleteBlock}
+                          addNewBlockAfter={addNewBlockAfter}
+                          addMessageAfter={addMessageAfter}
+                        />
+                      ))}
+                      {/* Add new block button faqat bloklar ro'yxatining pastida */}
+                      <div className="text-center">
+                        <Button onClick={addNewBlock} className="bg-green-600 hover:bg-green-700 text-white">
+                          <Plus className="w-4 h-4 mr-2" />
+                          Add message block
+                        </Button>
+                      </div>
+                      {tab.blocks.length === 0 && (
+                        <div className="text-center py-12 text-muted-foreground">
+                          <MessageSquare className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                          <p className="text-lg mb-2">No blocks yet</p>
+                          <p className="text-sm">Click the button above to add a new block</p>
+                        </div>
+                      )}
+                    </div>
+                  </div> {/* Block container tugadi */}
+                </TabsContent>
+              ))}
+            </Tabs>
+          </div> {/* Main content end */}
+
+          {/* Run Custom Code Panel - Sidebar */}
+          <div
+            ref={sidebarRef}
+            className="flex-shrink-0 relative"
+            style={{ width: `${sidebarWidth}px` }}
+          >
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border p-6 sticky top-24">
+              <h2 className="text-base font-semibold mb-3">Run Custom Code</h2>
+              <p className="text-sm text-muted-foreground mb-3">Use <code>blocks</code> variable to manipulate blocks. Your code must return a new array of blocks.</p>
+              <div className="mb-3">
+                <MonacoEditor
+                  height="300px"
+                  defaultLanguage="javascript"
+                  theme="vs-dark"
+                  value={customCode}
+                  onChange={(v: string | undefined) => setCustomCode(v || "")}
+                  options={{
+                    minimap: { enabled: false },
+                    fontSize: 13,
+                    fontFamily: 'Fira Mono, monospace',
+                    wordWrap: 'on',
+                    scrollBeyondLastLine: false,
+                    lineNumbers: "on",
+                  }}
+                />
+              </div>
+              {/* Custom code usage guide */}
+              <div className="mb-4 p-3 rounded bg-muted/40 text-sm text-muted-foreground">
+                <b>How to use:</b>
+                <ul className="list-disc ml-5 mt-2 space-y-1">
+                  <li><b>blocks</b> is an array of all blocks. Each block has <b>id</b> and <b>messages</b> (array).</li>
+                  <li>Each <b>message</b> has <b>role</b> (system/user/assistant) and <b>content</b> (string).</li>
+                  <li>Your code <b>must return a new array of blocks</b> (use <code>return ...</code>).</li>
+                  <li>You can use <code>map</code>, <code>filter</code>, <code>forEach</code> and all JS array methods.</li>
+                  <li><b>Do not use</b> async code, network requests, or browser APIs (window, document, etc).</li>
+                  <li>Example: <code>return blocks.map(block =&gt; ...)</code></li>
+                  <li>Invalid code or non-array return will show an error.</li>
+                </ul>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button onClick={runCustomCode} disabled={isRunningCustomCode} className="bg-blue-600 hover:bg-blue-700 text-white">
+                  {isRunningCustomCode ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+                  Run
+                </Button>
+                {customCodeError && <span className="text-red-500 text-sm ml-2">{customCodeError}</span>}
+              </div>
+            </div>
+
+            {/* Resize handle */}
+            <div
+              ref={resizeRef}
+              className="absolute -left-1 top-0 bottom-0 w-2 bg-gray-200 dark:bg-gray-600 hover:bg-blue-400 dark:hover:bg-blue-500 cursor-col-resize transition-colors duration-200 flex items-center justify-center group z-10"
+              onMouseDown={startResize}
+            >
+              <div className="w-0.5 h-8 bg-gray-400 group-hover:bg-blue-600 dark:bg-gray-500 dark:group-hover:bg-blue-400 rounded-full" />
+            </div>
+          </div>
+        </div> {/* Flex container end */}
       </main>
 
       <Toaster />
