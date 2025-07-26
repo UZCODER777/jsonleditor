@@ -263,10 +263,28 @@ return blocks.map(block => ({
   const [customCodeError, setCustomCodeError] = useState<string | null>(null);
   const [isRunningCustomCode, setIsRunningCustomCode] = useState(false);
 
+  // Auto-save settings
+  const [autoSave, setAutoSave] = useState<boolean>(false);
+
+  const toggleAutoSave = useCallback(() => {
+    const newAutoSave = !autoSave
+    setAutoSave(newAutoSave)
+    localStorage.setItem('jsonl-editor-auto-save', JSON.stringify(newAutoSave))
+    toast({
+      title: newAutoSave ? "Auto-save enabled" : "Auto-save disabled",
+      description: newAutoSave ? "Changes will be saved automatically" : "Changes will be saved manually",
+    })
+  }, [autoSave, toast])
+
   useEffect(() => {
     setMounted(true)
     // Load saved files from localStorage
     loadFilesFromStorage()
+    // Load auto-save settings
+    const savedAutoSave = localStorage.getItem('jsonl-editor-auto-save')
+    if (savedAutoSave !== null) {
+      setAutoSave(JSON.parse(savedAutoSave))
+    }
   }, [])
 
   // Generate unique ID
@@ -376,11 +394,14 @@ return blocks.map(block => ({
     (updater: (tab: FileTab) => FileTab) => {
       setFileTabs((prev) => {
         const newTabs = prev.map((tab) => (tab.id === activeTabId ? updater(tab) : tab))
-        // Don't auto-save to localStorage, only update state
+        // Auto-save if enabled
+        if (autoSave) {
+          saveFilesToStorage(newTabs)
+        }
         return newTabs
       })
     },
-    [activeTabId],
+    [activeTabId, autoSave, saveFilesToStorage],
   )
 
   // Add new message to a block
@@ -811,9 +832,9 @@ return blocks.map(block => ({
     updateActiveTab((tab) => ({
       ...tab,
       blocks: sampleBlocks,
-      hasUnsavedChanges: true,
+      hasUnsavedChanges: !autoSave, // If auto-save is on, mark as saved
     }))
-    // Don't auto-save sample data, let user save manually
+    // Auto-save is handled by updateActiveTab if enabled
 
     toast({
       title: "Sample data loaded",
@@ -822,7 +843,7 @@ return blocks.map(block => ({
   }, [activeTab, updateActiveTab, toast, generateId])
 
   // Fayl nomini saqlash
-  const saveTabName = (tabId: string) => {
+  const saveTabName = useCallback((tabId: string) => {
     setFileTabs((prev) => {
       const newTabs = prev.map((tab) => {
         if (tab.id === tabId) {
@@ -832,11 +853,14 @@ return blocks.map(block => ({
         }
         return tab
       })
-      // Don't auto-save when changing file name, let user save manually
+      // Auto-save if enabled
+      if (autoSave) {
+        saveFilesToStorage(newTabs)
+      }
       return newTabs
     })
     setEditingTabId(null)
-  }
+  }, [autoSave, saveFilesToStorage, editingName])
 
   // JSONLChatEditor ichida yangi funksiya:
   const addMessageAfter = useCallback((blockId: string, messageIndex: number) => {
@@ -869,8 +893,8 @@ return blocks.map(block => ({
       const fn = new Function('blocks', customCode);
       const result = fn(blocksCopy);
       if (Array.isArray(result)) {
-        updateActiveTab(tab => ({ ...tab, blocks: result, hasUnsavedChanges: true }));
-        // Don't auto-save custom code results, let user save manually
+        updateActiveTab(tab => ({ ...tab, blocks: result, hasUnsavedChanges: !autoSave })); // If auto-save is on, mark as saved
+        // Auto-save is handled by updateActiveTab if enabled
         toast({ title: "Success", description: "Custom code applied to blocks." });
       } else {
         setCustomCodeError("Your code must return an array of blocks.");
@@ -899,7 +923,7 @@ return blocks.map(block => ({
             <div>
               <h1 className="text-xl md:text-2xl font-bold">JSONL Editor</h1>
               <p className="text-xs text-muted-foreground">
-                {fileTabs.length} open file{fileTabs.length !== 1 ? 's' : ''} • Manual save required
+                {fileTabs.length} open file{fileTabs.length !== 1 ? 's' : ''} • {autoSave ? 'Auto-save enabled' : 'Manual save required'}
               </p>
             </div>
           </div>
@@ -992,25 +1016,13 @@ return blocks.map(block => ({
             )}
 
             <Button
-              onClick={() => {
-                if (activeTab) {
-                  setFileTabs((prev) => {
-                    const newTabs = prev.map(t => t.id === activeTab.id ? { ...t, hasUnsavedChanges: false } : t)
-                    saveFilesToStorage(newTabs)
-                    return newTabs
-                  })
-                  toast({
-                    title: "Saved",
-                    description: "Current file saved to browser storage",
-                  })
-                }
-              }}
-              variant="default"
+              onClick={toggleAutoSave}
+              variant={autoSave ? "default" : "outline"}
               size="sm"
-              className="bg-green-600 hover:bg-green-700 text-white flex items-center gap-2"
+              className={`flex items-center gap-2 ${autoSave ? 'bg-green-600 hover:bg-green-700 text-white' : 'text-green-600 hover:text-green-700 border-green-200 hover:border-green-300'}`}
             >
               <Save className="w-4 h-4" />
-              Save
+              Auto-save {autoSave ? 'ON' : 'OFF'}
             </Button>
 
             <Button onClick={() => downloadFile("jsonl")} variant="outline" size="sm" className="flex items-center gap-2">
@@ -1158,7 +1170,7 @@ return blocks.map(block => ({
                   <div className="text-sm text-muted-foreground flex items-center gap-2 mb-1">
                     <MessageSquare className="w-4 h-4 mr-1" /> Total messages: {tab.blocks.reduce((total, block) => total + block.messages.length, 0)}
                   </div>
-                  {tab.hasUnsavedChanges && (
+                  {tab.hasUnsavedChanges && !autoSave && (
                     <div className="text-sm text-orange-500 flex items-center gap-2 mt-1">
                       <AlertTriangle className="w-4 h-4" />
                       <span>Unsaved changes</span>
@@ -1180,6 +1192,12 @@ return blocks.map(block => ({
                       >
                         <Save className="w-4 h-4" /> Save
                       </button>
+                    </div>
+                  )}
+                  {tab.hasUnsavedChanges && autoSave && (
+                    <div className="text-sm text-green-500 flex items-center gap-2 mt-1">
+                      <Check className="w-4 h-4" />
+                      <span>Auto-saved</span>
                     </div>
                   )}
                 </div>
