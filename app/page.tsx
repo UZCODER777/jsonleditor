@@ -265,12 +265,23 @@ return blocks.map(block => ({
 
   useEffect(() => {
     setMounted(true)
-    // Create new tab
-    createNewTab("default.jsonl")
+    // Load saved files from localStorage
+    loadFilesFromStorage()
   }, [])
 
   // Generate unique ID
-  const generateId = () => `id_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+  const generateId = useCallback(() => `id_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`, [])
+
+  // localStorage utility functions
+  const STORAGE_KEY = 'jsonl-editor-files'
+
+  const saveFilesToStorage = useCallback((files: FileTab[]) => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(files))
+    } catch (error) {
+      console.error('Failed to save files to localStorage:', error)
+    }
+  }, [])
 
   // Create new tab
   const createNewTab = useCallback((name: string) => {
@@ -289,9 +300,37 @@ return blocks.map(block => ({
       ],
       hasUnsavedChanges: false,
     }
-    setFileTabs((prev) => [...prev, newTab])
+    setFileTabs((prev) => {
+      const newTabs = [...prev, newTab]
+      // Auto-save new tabs to localStorage
+      saveFilesToStorage(newTabs)
+      return newTabs
+    })
     setActiveTabId(newTab.id)
-  }, [])
+  }, [saveFilesToStorage, generateId])
+
+  const loadFilesFromStorage = useCallback(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY)
+      if (saved) {
+        const parsedFiles = JSON.parse(saved) as FileTab[]
+        setFileTabs(parsedFiles)
+        if (parsedFiles.length > 0) {
+          setActiveTabId(parsedFiles[0].id)
+        } else {
+          // If no saved files, create a default one
+          createNewTab("default.jsonl")
+        }
+      } else {
+        // If no saved files, create a default one
+        createNewTab("default.jsonl")
+      }
+    } catch (error) {
+      console.error('Failed to load files from localStorage:', error)
+      // If error loading, create a default file
+      createNewTab("default.jsonl")
+    }
+  }, [createNewTab, generateId])
 
   // Close tab
   const closeTab = useCallback(
@@ -312,17 +351,21 @@ return blocks.map(block => ({
             hasUnsavedChanges: false,
           }
           setActiveTabId(newTab.id)
-          return [newTab]
+          const finalTabs = [newTab]
+          saveFilesToStorage(finalTabs)
+          return finalTabs
         } else {
           // If the tab being closed is active, activate the next one
           if (tabId === activeTabId) {
             setActiveTabId(newTabs[0].id)
           }
+          // Auto-save when closing tabs
+          saveFilesToStorage(newTabs)
           return newTabs
         }
       })
     },
-    [activeTabId],
+    [activeTabId, saveFilesToStorage, generateId],
   )
 
   // Get active tab
@@ -331,7 +374,11 @@ return blocks.map(block => ({
   // Update active tab
   const updateActiveTab = useCallback(
     (updater: (tab: FileTab) => FileTab) => {
-      setFileTabs((prev) => prev.map((tab) => (tab.id === activeTabId ? updater(tab) : tab)))
+      setFileTabs((prev) => {
+        const newTabs = prev.map((tab) => (tab.id === activeTabId ? updater(tab) : tab))
+        // Don't auto-save to localStorage, only update state
+        return newTabs
+      })
     },
     [activeTabId],
   )
@@ -555,7 +602,12 @@ return blocks.map(block => ({
           hasUnsavedChanges: false,
         }
 
-        setFileTabs((prev) => [...prev, newTab])
+        setFileTabs((prev) => {
+          const newTabs = [...prev, newTab]
+          // Auto-save uploaded files to localStorage
+          saveFilesToStorage(newTabs)
+          return newTabs
+        })
         setActiveTabId(newTab.id)
 
         toast({
@@ -571,7 +623,7 @@ return blocks.map(block => ({
         })
       }
     },
-    [toast],
+    [toast, generateId, saveFilesToStorage],
   )
 
   // File upload handler
@@ -719,12 +771,11 @@ return blocks.map(block => ({
         document.body.removeChild(a)
         URL.revokeObjectURL(url)
 
-        // Mark tab as saved
-        updateActiveTab((tab) => ({ ...tab, hasUnsavedChanges: false }))
+        // Note: Download doesn't mark as saved anymore, use Save button for that
 
         toast({
-          title: "Success",
-          description: `${filename} downloaded`,
+          title: "Downloaded",
+          description: `${filename} has been downloaded`,
         })
       } catch (error) {
         console.error("Error downloading file:", error)
@@ -762,23 +813,28 @@ return blocks.map(block => ({
       blocks: sampleBlocks,
       hasUnsavedChanges: true,
     }))
+    // Don't auto-save sample data, let user save manually
 
     toast({
       title: "Sample data loaded",
       description: "Sample data loaded for testing",
     })
-  }, [activeTab, updateActiveTab, toast])
+  }, [activeTab, updateActiveTab, toast, generateId])
 
   // Fayl nomini saqlash
   const saveTabName = (tabId: string) => {
-    setFileTabs((prev) => prev.map((tab) => {
-      if (tab.id === tabId) {
-        // Faqat asosiy nomni yangilash, extensionni saqlash
-        const ext = tab.name.endsWith('.jsonl') ? '.jsonl' : ''
-        return { ...tab, name: editingName + ext, hasUnsavedChanges: true }
-      }
-      return tab
-    }))
+    setFileTabs((prev) => {
+      const newTabs = prev.map((tab) => {
+        if (tab.id === tabId) {
+          // Faqat asosiy nomni yangilash, extensionni saqlash
+          const ext = tab.name.endsWith('.jsonl') ? '.jsonl' : ''
+          return { ...tab, name: editingName + ext, hasUnsavedChanges: true }
+        }
+        return tab
+      })
+      // Don't auto-save when changing file name, let user save manually
+      return newTabs
+    })
     setEditingTabId(null)
   }
 
@@ -814,6 +870,7 @@ return blocks.map(block => ({
       const result = fn(blocksCopy);
       if (Array.isArray(result)) {
         updateActiveTab(tab => ({ ...tab, blocks: result, hasUnsavedChanges: true }));
+        // Don't auto-save custom code results, let user save manually
         toast({ title: "Success", description: "Custom code applied to blocks." });
       } else {
         setCustomCodeError("Your code must return an array of blocks.");
@@ -831,44 +888,50 @@ return blocks.map(block => ({
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      {/* Sticky warning banner: test mode */}
-      <div className="sticky top-0 z-50 w-full">
-        <div className="bg-gradient-to-r from-yellow-300 to-yellow-400 text-yellow-900 font-semibold text-center py-2 shadow-md border-b border-yellow-400">
-          ⚠️ Ushbu sayt <span className="font-bold">TEST REJIMIDA</span> ishlamoqda. Ma'lumotlar vaqtincha saqlanadi va xatoliklar bo'lishi mumkin.<br />
-          <span className="text-sm font-normal">Aloqa uchun:
-            <a
-              href="https://t.me/shohjahon_asqarov"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="underline hover:text-blue-700 transition-colors"
-            >
-              Telegram: @shohjahon_asqarov
-            </a>
-          </span>
-        </div>
-      </div>
+
       {/* Header */}
-      <header className="border-b bg-white dark:bg-gray-800 shadow-sm sticky top-[48px] z-40">
+      <header className="border-b bg-white dark:bg-gray-800 shadow-sm sticky top-0 z-40">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
               <MessageSquare className="w-4 h-4 text-primary-foreground" />
             </div>
             <div>
-              <h1 className="text-xl md:text-2xl font-bold">JSONL Chat Editor</h1>
-              <p className="text-xs text-muted-foreground">{fileTabs.length} open files</p>
+              <h1 className="text-xl md:text-2xl font-bold">JSONL Editor</h1>
+              <p className="text-xs text-muted-foreground">
+                {fileTabs.length} open file{fileTabs.length !== 1 ? 's' : ''} • Manual save required
+              </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
-          
+
             <Button onClick={() => createNewTab("default.jsonl")} variant="outline" size="sm">
               <Plus className="w-4 h-4 mr-2" />
-              New Tab
+              New File
             </Button>
 
             <Button onClick={loadSampleData} variant="outline" size="sm">
               🧪 Test Data
+            </Button>
+
+            <Button
+              onClick={() => {
+                if (confirm('Are you sure you want to clear all saved files? This action cannot be undone.')) {
+                  localStorage.removeItem(STORAGE_KEY)
+                  setFileTabs([])
+                  createNewTab("default.jsonl")
+                  toast({
+                    title: "Data cleared",
+                    description: "All saved files have been cleared",
+                  })
+                }
+              }}
+              variant="outline"
+              size="sm"
+              className="text-red-600 hover:text-red-700 border-red-200 hover:border-red-300"
+            >
+              🗑️ Clear Data
             </Button>
 
             <Button
@@ -928,9 +991,31 @@ return blocks.map(block => ({
               </div>
             )}
 
-            <Button onClick={() => downloadFile("jsonl")} variant="default" size="sm" className="bg-green-600 hover:bg-green-700 text-white flex items-center gap-2">
+            <Button
+              onClick={() => {
+                if (activeTab) {
+                  setFileTabs((prev) => {
+                    const newTabs = prev.map(t => t.id === activeTab.id ? { ...t, hasUnsavedChanges: false } : t)
+                    saveFilesToStorage(newTabs)
+                    return newTabs
+                  })
+                  toast({
+                    title: "Saved",
+                    description: "Current file saved to browser storage",
+                  })
+                }
+              }}
+              variant="default"
+              size="sm"
+              className="bg-green-600 hover:bg-green-700 text-white flex items-center gap-2"
+            >
+              <Save className="w-4 h-4" />
+              Save
+            </Button>
+
+            <Button onClick={() => downloadFile("jsonl")} variant="outline" size="sm" className="flex items-center gap-2">
               <Download className="w-4 h-4" />
-              JSONL
+              Download JSONL
             </Button>
 
             <Button variant="ghost" size="icon" onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>
@@ -1080,12 +1165,20 @@ return blocks.map(block => ({
                       <button
                         className="ml-2 px-3 py-1 bg-green-600 hover:bg-green-700 text-white rounded flex items-center gap-1 text-xs font-semibold shadow"
                         onClick={() => {
-                          downloadFile("jsonl", tab)
-                          setFileTabs((prev) => prev.map(t => t.id === tab.id ? { ...t, hasUnsavedChanges: false } : t))
+                          // Save to localStorage and mark as saved
+                          setFileTabs((prev) => {
+                            const newTabs = prev.map(t => t.id === tab.id ? { ...t, hasUnsavedChanges: false } : t)
+                            saveFilesToStorage(newTabs)
+                            return newTabs
+                          })
+                          toast({
+                            title: "Saved",
+                            description: "Changes saved to browser storage",
+                          })
                         }}
-                        title="Save changes"
+                        title="Save changes to browser"
                       >
-                        <Download className="w-4 h-4" /> Save
+                        <Save className="w-4 h-4" /> Save
                       </button>
                     </div>
                   )}
