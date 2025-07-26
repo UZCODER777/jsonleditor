@@ -3,7 +3,7 @@
 import React, { useMemo } from "react"
 
 import { useState, useCallback, useRef, useEffect } from "react"
-import { Plus, Trash2, Download, Upload, Save, Moon, Sun, Copy, Check, MessageSquare, X, FileText, Loader2, Pencil, Folder, LayoutGrid, AlertTriangle, GripVertical } from "lucide-react"
+import { Plus, Trash2, Download, Upload, Save, Moon, Sun, Copy, Check, MessageSquare, X, FileText, Loader2, Pencil, Folder, LayoutGrid, AlertTriangle, GripVertical, Beaker, Trash, Circle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -987,8 +987,10 @@ return blocks.map(block => ({
             </div>
             <div>
               <h1 className="text-xl md:text-2xl font-bold">JSONL Editor</h1>
-              <p className="text-xs text-muted-foreground">
-                {fileTabs.length} open file{fileTabs.length !== 1 ? 's' : ''} • {autoSave ? 'Auto-save enabled' : 'Manual save required'}
+              <p className="text-xs text-muted-foreground flex items-center gap-1">
+                <span>{fileTabs.length} open file{fileTabs.length !== 1 ? 's' : ''}</span>
+                <Circle className="w-1 h-1 fill-current" />
+                <span>{autoSave ? 'Auto-save enabled' : 'Manual save required'}</span>
               </p>
             </div>
           </div>
@@ -1001,7 +1003,8 @@ return blocks.map(block => ({
             </Button>
 
             <Button onClick={loadSampleData} variant="outline" size="sm">
-              🧪 Test Data
+              <Beaker className="w-4 h-4 mr-2" />
+              Test Data
             </Button>
 
             <Button
@@ -1020,7 +1023,8 @@ return blocks.map(block => ({
               size="sm"
               className="text-red-600 hover:text-red-700 border-red-200 hover:border-red-300"
             >
-              🗑️ Clear Data
+              <Trash className="w-4 h-4 mr-2" />
+              Clear Data
             </Button>
 
             <Button
